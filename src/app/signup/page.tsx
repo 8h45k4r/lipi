@@ -9,10 +9,25 @@ export default function SignupPage() {
   const { signup } = useAuth();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    signup(name || "Demo User", email || "demo@lipi.ai");
+    setError(null);
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+    setSubmitting(true);
+    await signup(name, email, password);
+    setSubmitting(false);
   };
 
   return (
@@ -26,7 +41,7 @@ export default function SignupPage() {
         </div>
 
         <form className="space-y-4" onSubmit={handleSubmit}>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Company Name</label>
               <input 
@@ -59,7 +74,7 @@ export default function SignupPage() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Email</label>
               <input 
@@ -81,26 +96,34 @@ export default function SignupPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Password</label>
-              <input 
-                type="password" 
+              <label htmlFor="password" className="text-sm font-medium">Password</label>
+              <input
+                id="password"
+                type="password"
                 required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 className="w-full border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
                 placeholder="••••••••"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Confirm Password</label>
-              <input 
-                type="password" 
+              <label htmlFor="confirmPassword" className="text-sm font-medium">Confirm Password</label>
+              <input
+                id="confirmPassword"
+                type="password"
                 required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
                 className="w-full border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
                 placeholder="••••••••"
               />
             </div>
           </div>
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
           <div className="space-y-2">
             <label className="text-sm font-medium">Country</label>
@@ -119,8 +142,8 @@ export default function SignupPage() {
             </label>
           </div>
 
-          <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm h-10">
-            Create Workspace
+          <Button type="submit" disabled={submitting} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm h-10">
+            {submitting ? "Creating…" : "Create Workspace"}
           </Button>
         </form>
 

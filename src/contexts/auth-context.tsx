@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 interface User {
@@ -10,68 +10,106 @@ interface User {
   email: string;
 }
 
+interface AuthResult {
+  ok: boolean;
+  error?: string;
+}
+
 interface AuthContextType {
   user: User | null;
-  login: (email: string) => void;
-  signup: (name: string, email: string) => void;
-  logout: () => void;
+  isLoading: boolean;
+  login: (email: string, password: string) => Promise<AuthResult>;
+  signup: (name: string, email: string, password: string) => Promise<AuthResult>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
-  const pathname = usePathname();
 
+  // Hydrate the current user from the httpOnly session cookie on mount.
   useEffect(() => {
-    const storedUser = localStorage.getItem("lipi_user");
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-    }
-    setIsLoaded(true);
+    let active = true;
+    fetch("/api/auth/me")
+      .then((res) => (res.ok ? res.json() : { user: null }))
+      .then((data) => {
+        if (active) setUser(data.user ?? null);
+      })
+      .catch(() => {
+        if (active) setUser(null);
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
-  useEffect(() => {
-    if (!isLoaded) return;
-    
-    // Protect dashboard routes
-    const isDashboardRoute = !['/login', '/signup', '/forgot-password', '/'].includes(pathname);
-    if (!user && isDashboardRoute) {
-      router.push("/login");
-    }
-    // Redirect away from auth routes if already logged in
-    if (user && ['/login', '/signup'].includes(pathname)) {
+  const login = async (email: string, password: string): Promise<AuthResult> => {
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const error = data.error || "Failed to sign in";
+        toast.error(error);
+        return { ok: false, error };
+      }
+      setUser(data.user);
+      toast.success("Successfully logged in");
       router.push("/dashboard");
+      return { ok: true };
+    } catch {
+      const error = "Network error. Please try again.";
+      toast.error(error);
+      return { ok: false, error };
     }
-  }, [user, pathname, isLoaded, router]);
-
-  const login = (email: string) => {
-    const newUser = { id: "u_1", name: "Demo User", email };
-    setUser(newUser);
-    localStorage.setItem("lipi_user", JSON.stringify(newUser));
-    toast.success("Successfully logged in");
-    router.push("/dashboard");
   };
 
-  const signup = (name: string, email: string) => {
-    const newUser = { id: "u_2", name, email };
-    setUser(newUser);
-    localStorage.setItem("lipi_user", JSON.stringify(newUser));
-    toast.success("Account created successfully");
-    router.push("/dashboard");
+  const signup = async (name: string, email: string, password: string): Promise<AuthResult> => {
+    try {
+      const res = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const error = data.error || "Failed to create account";
+        toast.error(error);
+        return { ok: false, error };
+      }
+      setUser(data.user);
+      toast.success("Account created successfully");
+      router.push("/dashboard");
+      return { ok: true };
+    } catch {
+      const error = "Network error. Please try again.";
+      toast.error(error);
+      return { ok: false, error };
+    }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      // Ignore network errors on logout; clear client state regardless.
+    }
     setUser(null);
-    localStorage.removeItem("lipi_user");
     toast.success("Logged out successfully");
     router.push("/login");
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, signup, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, login, signup, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -8,10 +8,14 @@ import { useAuth } from "@/contexts/auth-context";
 export default function LoginPage() {
   const { login } = useAuth();
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    login(email || "demo@lipi.ai");
+    setSubmitting(true);
+    await login(email, password);
+    setSubmitting(false);
   };
 
   return (
@@ -46,9 +50,10 @@ export default function LoginPage() {
           
           <form className="space-y-4" onSubmit={handleSubmit}>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Email</label>
-              <input 
-                type="email" 
+              <label htmlFor="email" className="text-sm font-medium">Email</label>
+              <input
+                id="email"
+                type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -56,17 +61,20 @@ export default function LoginPage() {
                 placeholder="you@company.com"
               />
             </div>
-            
+
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <label className="text-sm font-medium">Password</label>
+                <label htmlFor="password" className="text-sm font-medium">Password</label>
                 <Link href="/forgot-password" className="text-sm text-primary hover:underline">
                   Forgot Password?
                 </Link>
               </div>
-              <input 
-                type="password" 
+              <input
+                id="password"
+                type="password"
                 required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 className="w-full border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
                 placeholder="••••••••"
               />
@@ -79,8 +87,8 @@ export default function LoginPage() {
               </label>
             </div>
 
-            <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm h-10">
-              Log In
+            <Button type="submit" disabled={submitting} className="w-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm h-10">
+              {submitting ? "Signing in…" : "Log In"}
             </Button>
           </form>
 
