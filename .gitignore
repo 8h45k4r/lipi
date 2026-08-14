@@ -36,6 +36,12 @@ yarn-error.log*
 # vercel
 .vercel
 
+# uploaded documents (may contain PII — never commit)
+/public/uploads/*
+!/public/uploads/.gitkeep
+/uploads/*
+!/uploads/.gitkeep
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

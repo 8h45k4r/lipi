@@ -1,3 +1,5 @@
+import { getEnv } from './env';
+
 export interface ExtractionField {
   name: string;
   type: string;
@@ -27,11 +29,10 @@ export interface ExtractionResult {
   };
 }
 
-const OLLAMA_API = 'http://127.0.0.1:11434/api/chat';
-
 export async function runLocalGemmaExtraction(
   req: ExtractionRequest,
 ): Promise<ExtractionResult> {
+  const env = getEnv();
   const { ocrText, fields, systemPrompt } = req;
 
   const schemaLines = fields.map(
@@ -196,7 +197,7 @@ ${ocrText}
 `;
 
   const body = {
-    model: 'gemma4:12b',
+    model: env.OLLAMA_MODEL,
     messages: [
       {
         role: 'system',
@@ -208,7 +209,7 @@ ${ocrText}
     format: 'json',
   };
 
-  const res = await fetch(OLLAMA_API, {
+  const res = await fetch(`${env.OLLAMA_URL}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

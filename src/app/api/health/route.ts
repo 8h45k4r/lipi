@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { getEnv } from '@/lib/env';
 
 export async function GET() {
   const diagnostics: Record<string, any> = {
@@ -20,12 +21,13 @@ export async function GET() {
 
     // Check Ollama Connectivity
     try {
-      const res = await fetch('http://127.0.0.1:11434/api/tags');
+      const env = getEnv();
+      const res = await fetch(`${env.OLLAMA_URL}/api/tags`);
       if (res.ok) {
         const json = await res.json();
-        const hasGemma = json.models?.some((m: any) => m.name.includes('gemma4:12b'));
+        const hasModel = json.models?.some((m: any) => m.name.includes(env.OLLAMA_MODEL));
         diagnostics.ollama.connected = true;
-        diagnostics.ollama.hasTargetModel = hasGemma;
+        diagnostics.ollama.hasTargetModel = hasModel;
       } else {
         diagnostics.ollama.error = `Ollama responded with status ${res.status}`;
       }

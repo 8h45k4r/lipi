@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { getEnv } from '@/lib/env';
 
 export async function GET(req: Request) {
   try {
@@ -36,8 +37,9 @@ export async function POST(req: Request) {
       }
     }
 
+    const env = getEnv();
     const payload = {
-      model: "gemma4:12b",
+      model: env.OLLAMA_MODEL,
       messages: [
         { role: "system", content: systemContext },
         ...messages
@@ -45,7 +47,7 @@ export async function POST(req: Request) {
       stream: false
     };
 
-    const response = await fetch('http://127.0.0.1:11434/api/chat', {
+    const response = await fetch(`${env.OLLAMA_URL}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
