@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '@/lib/db';
 import { getEnv } from '@/lib/env';
+import { requireUser, UnauthorizedError, unauthorizedResponse } from '@/lib/auth';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 
@@ -52,6 +53,7 @@ async function runOcrOnBuffer(buf: Buffer, mimeType: string): Promise<{ text: st
 export async function POST(req: NextRequest) {
   const env = getEnv();
   try {
+    const user = await requireUser();
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
     const projectId = formData.get('projectId') as string | null;
@@ -100,14 +102,21 @@ export async function POST(req: NextRequest) {
     try {
       await conn.beginTransaction();
       await conn.execute(
-        'INSERT INTO documents (doc_uid, file_name, mime_type, storage_path, page_count, ocr_text) VALUES (?, ?, ?, ?, ?, ?)',
-        [docUid, file.name, mimeType, publicStoragePath, pageCount, ocrText],
+        'INSERT INTO documents (doc_uid, file_name, mime_type, storage_path, page_count, ocr_text, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [docUid, file.name, mimeType, publicStoragePath, pageCount, ocrText, user.userId],
       );
       if (projectId) {
-        await conn.execute(
-          'INSERT IGNORE INTO project_documents (project_uid, doc_uid) VALUES (?, ?)',
-          [projectId, docUid],
+        // Only link to a project the user actually owns.
+        const [ownedProject] = await conn.execute(
+          'SELECT project_uid FROM projects WHERE project_uid = ? AND owner_id = ?',
+          [projectId, user.userId],
         );
+        if ((ownedProject as any[]).length > 0) {
+          await conn.execute(
+            'INSERT IGNORE INTO project_documents (project_uid, doc_uid) VALUES (?, ?)',
+            [projectId, docUid],
+          );
+        }
       }
       await conn.execute(
         'INSERT INTO activity (type, doc_uid, project_uid, details) VALUES (?, ?, ?, ?)',
@@ -122,7 +131,8 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ docId: docUid });
-  } catch (error: any) {
+  } catch (error) {
+    if (error instanceof UnauthorizedError) return unauthorizedResponse();
     console.error('Upload Error:', error);
     return NextResponse.json({ error: 'Failed to upload document' }, { status: 500 });
   }

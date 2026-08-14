@@ -4,17 +4,24 @@ import {
   runLocalGemmaExtraction,
   ExtractionField,
 } from '@/lib/ollama';
+import { requireUser, UnauthorizedError, unauthorizedResponse } from '@/lib/auth';
 
-async function getOcrForDoc(docUid: string): Promise<string> {
+class DocumentNotFoundError extends Error {}
+
+async function getOcrForDoc(docUid: string, ownerId: string): Promise<string> {
   const db = await getDb();
-  const [rows] = await db.execute('SELECT ocr_text FROM documents WHERE doc_uid = ?', [docUid]);
+  const [rows] = await db.execute(
+    'SELECT ocr_text FROM documents WHERE doc_uid = ? AND owner_id = ?',
+    [docUid, ownerId],
+  );
   const row = (rows as any[])[0];
-  if (!row) throw new Error('Document not found in database');
+  if (!row) throw new DocumentNotFoundError('Document not found');
   return row.ocr_text as string;
 }
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await requireUser();
     const body = await req.json();
     const { docId, fields, systemPrompt, settings, parseConfig } = body;
 
@@ -25,7 +32,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const ocrText = await getOcrForDoc(docId);
+    const ocrText = await getOcrForDoc(docId, user.userId);
     const extractionFields = fields as ExtractionField[];
 
     // Call the local Ollama integration service
@@ -86,18 +93,22 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error: any) {
+    if (error instanceof UnauthorizedError) return unauthorizedResponse();
+    if (error instanceof DocumentNotFoundError) {
+      return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+    }
     console.error('Extraction API error:', error);
-    
+
     // Check if it's a connection error indicating Ollama isn't running
     if (error.message && (error.message.includes('fetch failed') || error.message.includes('ECONNREFUSED'))) {
       return NextResponse.json(
-        { error: 'Cannot connect to local Ollama. Please make sure "ollama serve" is running on 127.0.0.1:11434.' },
+        { error: 'Cannot connect to the local AI model. Please make sure Ollama is running.' },
         { status: 503 }
       );
     }
 
     return NextResponse.json(
-      { error: error.message || 'An unexpected error occurred during extraction.' },
+      { error: 'An unexpected error occurred during extraction.' },
       { status: 500 }
     );
   }

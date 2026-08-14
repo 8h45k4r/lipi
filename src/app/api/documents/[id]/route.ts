@@ -1,24 +1,28 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { requireUser, UnauthorizedError, unauthorizedResponse } from '@/lib/auth';
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await requireUser();
     const db = await getDb();
-    const resolvedParams = await params;
-    const docId = resolvedParams.id;
+    const { id: docId } = await params;
 
-    const [rows] = await db.query(`
-      SELECT 
-        d.id, 
-        d.doc_uid as docUid, 
-        d.file_name as name, 
+    const [rows] = await db.query(
+      `
+      SELECT
+        d.id,
+        d.doc_uid as docUid,
+        d.file_name as name,
         d.mime_type as mimeType,
         d.storage_path as storagePath,
         d.page_count as pages,
         d.created_at as date
       FROM documents d
-      WHERE d.doc_uid = ?
-    `, [docId]);
+      WHERE d.doc_uid = ? AND d.owner_id = ?
+    `,
+      [docId, user.userId],
+    );
 
     if ((rows as any[]).length === 0) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
@@ -26,14 +30,16 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
     const doc = (rows as any[])[0];
 
-    // Fetch the most recent extraction for this document
-    const [extRows] = await db.query(`
+    const [extRows] = await db.query(
+      `
       SELECT result_json, raw_response, prompt_tokens, completion_tokens, total_duration_ns, created_at
       FROM extractions
       WHERE doc_uid = ?
       ORDER BY created_at DESC
       LIMIT 1
-    `, [docId]);
+    `,
+      [docId],
+    );
 
     let latestExtraction = null;
     if ((extRows as any[]).length > 0) {
@@ -44,9 +50,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         metrics: {
           promptTokens: ext.prompt_tokens,
           completionTokens: ext.completion_tokens,
-          totalDurationSeconds: ext.total_duration_ns / 1_000_000_000
+          totalDurationSeconds: ext.total_duration_ns / 1_000_000_000,
         },
-        date: new Date(ext.created_at).toISOString()
+        date: new Date(ext.created_at).toISOString(),
       };
     }
 
@@ -58,28 +64,49 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         storagePath: doc.storagePath,
         pages: doc.pages || 1,
         date: new Date(doc.date).toLocaleDateString(),
-        latestExtraction
-      }
+        latestExtraction,
+      },
     });
-
-  } catch (error: any) {
+  } catch (error) {
+    if (error instanceof UnauthorizedError) return unauthorizedResponse();
     console.error('Document Detail API Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await requireUser();
     const db = await getDb();
-    const resolvedParams = await params;
-    const docId = resolvedParams.id;
+    const { id: docId } = await params;
 
-    await db.execute('DELETE FROM project_documents WHERE doc_uid = ?', [docId]);
-    await db.execute('DELETE FROM extractions WHERE doc_uid = ?', [docId]);
-    await db.execute('DELETE FROM documents WHERE doc_uid = ?', [docId]);
+    // Verify ownership before deleting.
+    const [owned] = await db.query(
+      'SELECT doc_uid FROM documents WHERE doc_uid = ? AND owner_id = ?',
+      [docId, user.userId],
+    );
+    if ((owned as any[]).length === 0) {
+      return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+    }
+
+    const conn = await db.getConnection();
+    try {
+      await conn.beginTransaction();
+      await conn.execute('DELETE FROM project_documents WHERE doc_uid = ?', [docId]);
+      await conn.execute('DELETE FROM extractions WHERE doc_uid = ?', [docId]);
+      await conn.execute('DELETE FROM documents WHERE doc_uid = ? AND owner_id = ?', [docId, user.userId]);
+      await conn.commit();
+    } catch (txErr) {
+      await conn.rollback();
+      throw txErr;
+    } finally {
+      conn.release();
+    }
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    if (error instanceof UnauthorizedError) return unauthorizedResponse();
+    console.error('Document DELETE API Error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

@@ -1,11 +1,16 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { v4 as uuidv4 } from 'uuid';
+import { requireUser, UnauthorizedError, unauthorizedResponse } from '@/lib/auth';
 
 export async function GET() {
   try {
+    const user = await requireUser();
     const db = await getDb();
-    const [rows] = await db.query('SELECT * FROM pipelines ORDER BY created_at DESC');
+    const [rows] = await db.query(
+      'SELECT * FROM pipelines WHERE owner_id = ? ORDER BY created_at DESC',
+      [user.userId],
+    );
     
     const pipelines = (rows as Record<string, unknown>[]).map(row => {
       let config: Record<string, unknown> = {};
@@ -29,6 +34,7 @@ export async function GET() {
     
     return NextResponse.json({ pipelines });
   } catch (error) {
+    if (error instanceof UnauthorizedError) return unauthorizedResponse();
     console.error('Error fetching pipelines:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
@@ -36,27 +42,28 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const user = await requireUser();
     const body = await request.json();
     const { name, description, triggerType } = body;
-    
+
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
     }
-    
+
     const db = await getDb();
     const id = `pipe_${uuidv4()}`;
     const status = 'Paused';
-    
+
     const config = {
       triggerType: triggerType || 'Manual',
       steps: ['Upload Trigger'],
       runs: '0',
       successRate: '-'
     };
-    
+
     await db.query(
-      'INSERT INTO pipelines (id, name, description, status, config) VALUES (?, ?, ?, ?, ?)',
-      [id, name, description || '', status, JSON.stringify(config)]
+      'INSERT INTO pipelines (id, name, description, status, config, owner_id) VALUES (?, ?, ?, ?, ?, ?)',
+      [id, name, description || '', status, JSON.stringify(config), user.userId]
     );
     
     return NextResponse.json({
@@ -72,6 +79,7 @@ export async function POST(request: Request) {
       }
     });
   } catch (error) {
+    if (error instanceof UnauthorizedError) return unauthorizedResponse();
     console.error('Error creating pipeline:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }

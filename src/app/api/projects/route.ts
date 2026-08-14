@@ -1,14 +1,18 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { v4 as uuidv4 } from 'uuid';
+import { z } from 'zod';
+import { requireUser, UnauthorizedError, unauthorizedResponse } from '@/lib/auth';
 
 export async function GET() {
   try {
+    const user = await requireUser();
     const db = await getDb();
-    
-    // Fetch projects and left join project_documents and documents to get counts
-    const [rows] = await db.query(`
-      SELECT 
+
+    // Only the signed-in user's projects, with document counts.
+    const [rows] = await db.query(
+      `
+      SELECT
         p.project_uid as id,
         p.name as name,
         p.created_at as date,
@@ -17,37 +21,53 @@ export async function GET() {
       FROM projects p
       LEFT JOIN project_documents pd ON p.project_uid = pd.project_uid
       LEFT JOIN documents d ON pd.doc_uid = d.doc_uid
+      WHERE p.owner_id = ?
       GROUP BY p.id
       ORDER BY p.created_at DESC
-    `);
+    `,
+      [user.userId],
+    );
 
-    const formattedProjects = (rows as any[]).map(p => ({
+    const formattedProjects = (rows as any[]).map((p) => ({
       id: p.id,
       name: p.name,
       documents: p.documents,
       status: 'Active',
-      lastUpdated: p.lastUpdated ? new Date(p.lastUpdated).toLocaleDateString() : new Date(p.date).toLocaleDateString()
+      lastUpdated: p.lastUpdated
+        ? new Date(p.lastUpdated).toLocaleDateString()
+        : new Date(p.date).toLocaleDateString(),
     }));
 
     return NextResponse.json({ projects: formattedProjects });
-  } catch (error: any) {
+  } catch (error) {
+    if (error instanceof UnauthorizedError) return unauthorizedResponse();
     console.error('Projects GET API Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
+const CreateSchema = z.object({ name: z.string().min(1, 'Name is required').max(255).trim() });
+
 export async function POST(req: Request) {
   try {
-    const { name } = await req.json();
-    if (!name) return NextResponse.json({ error: 'Name is required' }, { status: 400 });
+    const user = await requireUser();
+    const parsed = CreateSchema.safeParse(await req.json().catch(() => null));
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Name is required' }, { status: 400 });
+    }
 
     const db = await getDb();
     const uid = `proj_${uuidv4()}`;
+    await db.execute('INSERT INTO projects (project_uid, name, owner_id) VALUES (?, ?, ?)', [
+      uid,
+      parsed.data.name,
+      user.userId,
+    ]);
 
-    await db.execute('INSERT INTO projects (project_uid, name) VALUES (?, ?)', [uid, name]);
-
-    return NextResponse.json({ id: uid, name });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ id: uid, name: parsed.data.name });
+  } catch (error) {
+    if (error instanceof UnauthorizedError) return unauthorizedResponse();
+    console.error('Projects POST API Error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
