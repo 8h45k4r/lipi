@@ -11,11 +11,12 @@ import { z } from 'zod';
  * See `.env.example` for the full list of supported variables.
  */
 const envSchema = z.object({
-  // Database
+  // Database — defaults match a stock MAMP install (MySQL on 8889, root/root).
+  // Override via env for any other setup (standard MySQL uses port 3306).
   DB_HOST: z.string().min(1).default('127.0.0.1'),
-  DB_PORT: z.coerce.number().int().positive().default(3306),
+  DB_PORT: z.coerce.number().int().positive().default(8889),
   DB_USER: z.string().min(1).default('root'),
-  DB_PASSWORD: z.string().default(''),
+  DB_PASSWORD: z.string().default('root'),
   DB_NAME: z.string().min(1).default('lipi_local'),
   DB_CONNECTION_LIMIT: z.coerce.number().int().positive().default(10),
 

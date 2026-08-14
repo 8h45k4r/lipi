@@ -52,19 +52,29 @@ Lipi is a state-of-the-art, AI-powered document extraction and knowledge managem
    npm install
    ```
 
-3. **Set up the Database**:
-   Update your database credentials in `src/lib/db.ts` or via environment variables. Then run the initialization script:
+3. **Configure environment** (optional for MAMP defaults):
    ```bash
-   node init-tables.js
+   cp .env.example .env.local
    ```
+   The defaults target MAMP's MySQL (`127.0.0.1:8889`, `root`/`root`, database `lipi_local`). Override `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME` in `.env.local` for any other setup, and set a strong `SESSION_SECRET` (`openssl rand -base64 32`).
 
-4. **Run the Development Server**:
+4. **Set up the Database** (creates all tables + a demo admin, idempotent):
+   ```bash
+   npm run setup
+   ```
+   This seeds a demo admin you can log in with immediately:
+   - **Email:** `admin@lipi.ai`
+   - **Password:** `admin123`
+
+   > Change or override these with `DEMO_ADMIN_EMAIL` / `DEMO_ADMIN_PASSWORD` when running setup. Don't ship the demo credentials to production.
+
+5. **Run the Development Server**:
    ```bash
    npm run dev
    ```
 
-5. **Open the Application**:
-   Navigate to [http://localhost:3000](http://localhost:3000) in your browser.
+6. **Open the Application**:
+   Navigate to [http://localhost:3000](http://localhost:3000), log in with the demo admin, and you're in. You can also create additional accounts via the Sign Up page.
 
 ## 📁 Project Structure
 
