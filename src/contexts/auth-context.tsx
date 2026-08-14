@@ -3,11 +3,14 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { ALL_PERMISSIONS, type Permission, type Role } from "@/lib/rbac";
 
 interface User {
   id: string;
   name: string;
   email: string;
+  role?: Role;
+  permissions?: Permission[];
 }
 
 interface AuthResult {
@@ -18,6 +21,13 @@ interface AuthResult {
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
+  /** The caller's workspace role; null until /api/auth/me resolves it. */
+  role: Role | null;
+  /**
+   * Permissions for the caller's role. Defaults to ALL permissions until the
+   * role is loaded so owner/admin UI never flash-hides on first paint.
+   */
+  permissions: Permission[];
   login: (email: string, password: string) => Promise<AuthResult>;
   signup: (name: string, email: string, password: string) => Promise<AuthResult>;
   logout: () => Promise<void>;
@@ -29,6 +39,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
+
+  const refreshUser = React.useCallback(() => {
+    return fetch("/api/auth/me")
+      .then((res) => (res.ok ? res.json() : { user: null }))
+      .then((data) => setUser(data.user ?? null))
+      .catch(() => {});
+  }, []);
 
   // Hydrate the current user from the httpOnly session cookie on mount.
   useEffect(() => {
@@ -63,6 +80,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, error };
       }
       setUser(data.user);
+      // Login responses don't carry role/permissions; hydrate them.
+      refreshUser();
       toast.success("Successfully logged in");
       router.push("/dashboard");
       return { ok: true };
@@ -87,6 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, error };
       }
       setUser(data.user);
+      refreshUser();
       toast.success("Account created successfully");
       router.push("/dashboard");
       return { ok: true };
@@ -108,8 +128,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.push("/login");
   };
 
+  const role = user?.role ?? null;
+  const permissions = user?.permissions ?? ALL_PERMISSIONS;
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, signup, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, role, permissions, login, signup, logout }}>
       {children}
     </AuthContext.Provider>
   );

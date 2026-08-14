@@ -2,7 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '@/lib/db';
 import { getEnv } from '@/lib/env';
-import { requireUser, UnauthorizedError, unauthorizedResponse } from '@/lib/auth';
+import {
+  ForbiddenError,
+  forbiddenResponse,
+  getWorkspaceContext,
+  requirePermission,
+  UnauthorizedError,
+  unauthorizedResponse,
+} from '@/lib/auth';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 
@@ -53,7 +60,8 @@ async function runOcrOnBuffer(buf: Buffer, mimeType: string): Promise<{ text: st
 export async function POST(req: NextRequest) {
   const env = getEnv();
   try {
-    const user = await requireUser();
+    const ctx = await getWorkspaceContext();
+    requirePermission(ctx, 'upload_documents');
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
     const projectId = formData.get('projectId') as string | null;
@@ -90,7 +98,7 @@ export async function POST(req: NextRequest) {
     // read path is the authorized /api/uploads route.
     const uploadDir = path.isAbsolute(env.UPLOAD_DIR)
       ? env.UPLOAD_DIR
-      : path.join(process.cwd(), env.UPLOAD_DIR);
+      : path.join(/*turbopackIgnore: true*/ process.cwd(), env.UPLOAD_DIR);
     await mkdir(uploadDir, { recursive: true });
     await writeFile(path.join(uploadDir, safeFileName), buffer);
     const publicStoragePath = `/uploads/${safeFileName}`;
@@ -103,13 +111,13 @@ export async function POST(req: NextRequest) {
       await conn.beginTransaction();
       await conn.execute(
         'INSERT INTO documents (doc_uid, file_name, mime_type, storage_path, page_count, ocr_text, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [docUid, file.name, mimeType, publicStoragePath, pageCount, ocrText, user.userId],
+        [docUid, file.name, mimeType, publicStoragePath, pageCount, ocrText, ctx.dataOwnerId],
       );
       if (projectId) {
         // Only link to a project the user actually owns.
         const [ownedProject] = await conn.execute(
           'SELECT project_uid FROM projects WHERE project_uid = ? AND owner_id = ?',
-          [projectId, user.userId],
+          [projectId, ctx.dataOwnerId],
         );
         if ((ownedProject as any[]).length > 0) {
           await conn.execute(
@@ -119,8 +127,8 @@ export async function POST(req: NextRequest) {
         }
       }
       await conn.execute(
-        'INSERT INTO activity (type, doc_uid, project_uid, details) VALUES (?, ?, ?, ?)',
-        ['upload', docUid, projectId || null, `Uploaded document ${file.name}`],
+        'INSERT INTO activity (type, doc_uid, project_uid, owner_id, details) VALUES (?, ?, ?, ?, ?)',
+        ['upload', docUid, projectId || null, ctx.dataOwnerId, `Uploaded document ${file.name}`],
       );
       await conn.commit();
     } catch (txErr) {
@@ -133,6 +141,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ docId: docUid });
   } catch (error) {
     if (error instanceof UnauthorizedError) return unauthorizedResponse();
+    if (error instanceof ForbiddenError) return forbiddenResponse();
     console.error('Upload Error:', error);
     return NextResponse.json({ error: 'Failed to upload document' }, { status: 500 });
   }

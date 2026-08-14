@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import {
-  runLocalGemmaExtraction,
-  ExtractionField,
-} from '@/lib/ollama';
+import { runLocalSplit, SplitSection } from '@/lib/ollama';
 import {
   ForbiddenError,
   forbiddenResponse,
@@ -19,73 +16,58 @@ export async function POST(req: NextRequest) {
     const ctx = await getWorkspaceContext();
     requirePermission(ctx, 'run_tools');
     const body = await req.json();
-    const { docId, fields, systemPrompt, settings, parseConfig } = body;
+    const { docId, sections, partitionKey } = body;
 
-    if (!docId || !Array.isArray(fields) || fields.length === 0) {
+    if (!docId || !Array.isArray(sections) || sections.length === 0) {
       return NextResponse.json(
-        { error: 'docId and fields array are required' },
+        { error: 'docId and sections array are required' },
         { status: 400 },
       );
     }
 
-    const { ocrText } = await getDocForOwner(docId, ctx.dataOwnerId);
-    const extractionFields = fields as ExtractionField[];
+    const { ocrText, pageCount } = await getDocForOwner(docId, ctx.dataOwnerId);
 
     // Call the local Ollama integration service
-    const result = await runLocalGemmaExtraction({
+    const result = await runLocalSplit({
       ocrText,
-      fields: extractionFields,
-      systemPrompt: systemPrompt ?? '',
-      settings: settings,
-      parseConfig: parseConfig,
+      pageCount,
+      sections: sections as SplitSection[],
+      partitionKey,
     });
 
-    // Parse _confidence from LLM output and calculate global average confidence score
-    let confidenceScore: number | null = null;
-    const confidenceObj = result.data?._confidence;
-
-    if (confidenceObj && typeof confidenceObj === 'object' && !Array.isArray(confidenceObj)) {
-      const scores = Object.values(confidenceObj)
-        .map((val) => (typeof val === 'number' ? val : parseFloat(String(val))))
-        .filter((val) => !isNaN(val) && isFinite(val));
-
-      if (scores.length > 0) {
-        const sum = scores.reduce((acc, curr) => acc + curr, 0);
-        confidenceScore = sum / scores.length;
-      }
-    }
-
     const db = await getDb();
+
+    const splits = result.data?.splits ?? [];
+    const overallConfidence = splits.length > 0 && splits.every((s: any) => s.confidence === 'high') ? 'high' : 'low';
     await db.execute(
-      'INSERT INTO extractions (doc_uid, schema_json, settings_json, result_json, raw_response, prompt_tokens, completion_tokens, total_duration_ns, confidence_score) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO tool_runs (doc_uid, owner_id, tool, request_json, result_json, confidence, prompt_tokens, completion_tokens, total_duration_ns) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         docId,
-        JSON.stringify(extractionFields),
-        JSON.stringify(settings || {}),
-        JSON.stringify(result.data),
-        result.raw,
+        ctx.dataOwnerId,
+        'split',
+        JSON.stringify({ sections, partitionKey: partitionKey ?? null }),
+        JSON.stringify(result.data ?? {}),
+        overallConfidence,
         result.usage.promptTokens,
         result.usage.completionTokens,
         result.usage.totalDurationNs,
-        confidenceScore,
       ],
     );
 
     // Log Activity
     await db.execute(
       'INSERT INTO activity (type, doc_uid, owner_id, details) VALUES (?, ?, ?, ?)',
-      ['extract', docId, ctx.dataOwnerId, `Ran extraction using local model`]
+      ['split', docId, ctx.dataOwnerId, `Ran section split (${sections.length} sections)`],
     );
 
-    return NextResponse.json({ 
-      data: result.data, 
-      raw: result.raw,
+    return NextResponse.json({
+      splits: result.data?.splits ?? [],
+      partitions: result.data?.partitions ?? [],
       metrics: {
         promptTokens: result.usage.promptTokens,
         completionTokens: result.usage.completionTokens,
         totalDurationSeconds: result.usage.totalDurationNs / 1_000_000_000, // ns to seconds
       },
-      confidence_score: confidenceScore,
     });
 
   } catch (error: any) {
@@ -94,7 +76,7 @@ export async function POST(req: NextRequest) {
     if (error instanceof DocumentNotFoundError) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
-    console.error('Extraction API error:', error);
+    console.error('Split API error:', error);
 
     // Check if it's a connection error indicating Ollama isn't running
     if (error.message && (error.message.includes('fetch failed') || error.message.includes('ECONNREFUSED'))) {
@@ -105,7 +87,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json(
-      { error: 'An unexpected error occurred during extraction.' },
+      { error: 'An unexpected error occurred during split.' },
       { status: 500 }
     );
   }

@@ -29,10 +29,179 @@ export interface ExtractionResult {
   };
 }
 
+export interface SplitSection {
+  name: string;
+  description: string;
+}
+
+export interface SplitRequest {
+  ocrText: string;
+  pageCount: number;
+  sections: SplitSection[];
+  partitionKey?: string;
+}
+
+export interface SplitResult {
+  data: {
+    splits?: Array<{
+      name: string;
+      pages: number[];
+      confidence: 'high' | 'low';
+      evidence: string;
+    }>;
+    partitions?: Array<{ key: string; name: string; pages: number[] }>;
+    [key: string]: any;
+  };
+  raw: string;
+  usage: {
+    promptTokens: number;
+    completionTokens: number;
+    totalDurationNs: number;
+  };
+}
+
+export interface ClassifyCategory {
+  name: string;
+  description: string;
+}
+
+export interface ClassifyRequest {
+  ocrText: string;
+  categories: ClassifyCategory[];
+}
+
+export interface ClassifyResult {
+  data: {
+    category?: string;
+    scores?: Array<{ category: string; score: number }>;
+    evidence?: string;
+    confidence?: 'high' | 'low';
+    [key: string]: any;
+  };
+  raw: string;
+  usage: {
+    promptTokens: number;
+    completionTokens: number;
+    totalDurationNs: number;
+  };
+}
+
+async function callOllamaJson(systemMessage: string, userContent: string) {
+  const env = getEnv();
+
+  const res = await fetch(`${env.OLLAMA_URL}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: env.OLLAMA_MODEL,
+      messages: [
+        { role: 'system', content: systemMessage },
+        { role: 'user', content: userContent },
+      ],
+      stream: false,
+      format: 'json',
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Ollama error ${res.status}: ${text}`);
+  }
+
+  const json = await res.json();
+  const message = json.message?.content ?? json.message ?? '';
+  let parsed: any;
+
+  try {
+    parsed = typeof message === 'string' ? JSON.parse(message) : message;
+  } catch (e) {
+    console.warn("Model returned non-JSON output despite grammar constraint", e);
+    // Fallback parsing just in case it included markdown blocks
+    const jsonMatch = (message as string).match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (jsonMatch) {
+      try { parsed = JSON.parse(jsonMatch[1]); } catch(e2) { throw new Error('Model returned non-JSON output'); }
+    } else {
+      throw new Error(`Model returned non-JSON output. Raw output: ${message}`);
+    }
+  }
+
+  return {
+    data: parsed,
+    raw: typeof message === 'string' ? message : JSON.stringify(message),
+    usage: {
+      promptTokens: json.prompt_eval_count || 0,
+      completionTokens: json.eval_count || 0,
+      totalDurationNs: json.total_duration || 0,
+    },
+  };
+}
+
+export async function runLocalSplit(req: SplitRequest): Promise<SplitResult> {
+  const { ocrText, pageCount, sections, partitionKey } = req;
+
+  const sectionLines = sections
+    .map((s) => `- "${s.name}": ${s.description}`)
+    .join('\n');
+
+  const systemMessage = `You are a precise document-splitting engine for Nepali and English government and legal documents (Gazette notices, citizenship certificates, land/parcel records).
+
+You receive the OCR text of one document with approximately ${pageCount} page(s) and a list of user-described sections. Classify the document's content into those sections and estimate which pages each section covers.
+
+Rules:
+- Output exactly one valid JSON object and nothing else.
+- The object must have a "splits" array. Each element: { "name": string (a section name from the list, exactly as given), "pages": number[] (1-based page numbers), "confidence": "high" | "low", "evidence": string (verbatim snippet from the OCR text that anchors the section) }.
+- If explicit page markers are absent, estimate pages best-effort from content order and length; never invent pages beyond ${pageCount}.
+- Preserve Nepali (Devanagari) text as-is in evidence snippets.
+- Omit sections that clearly do not appear; do not guess.${partitionKey ? `
+- The object must also have a "partitions" array. Group repeating sections by the identifier "${partitionKey}" read from the document. Each element: { "key": string (the ${partitionKey} value found in the text), "name": string, "pages": number[] }.` : `
+- The object must also have a "partitions" array; set it to [].`}`;
+
+  const userContent = `Sections to split into:
+
+${sectionLines}
+
+Document page count (approximate): ${pageCount}
+
+OCR TEXT (single document):
+
+${ocrText}
+`;
+
+  return callOllamaJson(systemMessage, userContent);
+}
+
+export async function runLocalClassify(req: ClassifyRequest): Promise<ClassifyResult> {
+  const { ocrText, categories } = req;
+
+  const categoryLines = categories
+    .map((c) => `- "${c.name}": ${c.description}`)
+    .join('\n');
+
+  const systemMessage = `You are a precise document-classification engine for Nepali and English government and legal documents (Gazette notices, citizenship certificates, land/parcel records).
+
+You receive the OCR text of one document and a list of user-described categories. Pick the best matching category.
+
+Rules:
+- Output exactly one valid JSON object and nothing else, with keys: "category" (the best matching category name, exactly as given), "scores" (array of { "category": string, "score": number } with a score between 0.0 and 1.0 for every category), "evidence" (verbatim snippet(s) from the OCR text justifying the choice), "confidence" ("high" or "low").
+- Preserve Nepali (Devanagari) text as-is in evidence snippets.
+- Base the decision only on the OCR text; do not invent content.
+- If no category fits well, still pick the closest one but set confidence to "low".`;
+
+  const userContent = `Categories:
+
+${categoryLines}
+
+OCR TEXT (single document):
+
+${ocrText}
+`;
+
+  return callOllamaJson(systemMessage, userContent);
+}
+
 export async function runLocalGemmaExtraction(
   req: ExtractionRequest,
 ): Promise<ExtractionResult> {
-  const env = getEnv();
   const { ocrText, fields, systemPrompt } = req;
 
   const schemaLines = fields.map(
@@ -196,54 +365,5 @@ Below is the full OCR text of the document. Use it, together with the schema abo
 ${ocrText}
 `;
 
-  const body = {
-    model: env.OLLAMA_MODEL,
-    messages: [
-      {
-        role: 'system',
-        content: systemMessage,
-      },
-      { role: 'user', content: userContent },
-    ],
-    stream: false,
-    format: 'json',
-  };
-
-  const res = await fetch(`${env.OLLAMA_URL}/api/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Ollama error ${res.status}: ${text}`);
-  }
-
-  const json = await res.json();
-  const message = json.message?.content ?? json.message ?? '';
-  let parsed: any;
-
-  try {
-    parsed = typeof message === 'string' ? JSON.parse(message) : message;
-  } catch (e) {
-    console.warn("Model returned non-JSON output despite grammar constraint", e);
-    // Fallback parsing just in case it included markdown blocks
-    const jsonMatch = (message as string).match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-    if (jsonMatch) {
-      try { parsed = JSON.parse(jsonMatch[1]); } catch(e2) { throw new Error('Model returned non-JSON output'); }
-    } else {
-      throw new Error(`Model returned non-JSON output. Raw output: ${message}`);
-    }
-  }
-
-  return {
-    data: parsed,
-    raw: typeof message === 'string' ? message : JSON.stringify(message),
-    usage: {
-      promptTokens: json.prompt_eval_count || 0,
-      completionTokens: json.eval_count || 0,
-      totalDurationNs: json.total_duration || 0,
-    }
-  };
+  return callOllamaJson(systemMessage, userContent);
 }

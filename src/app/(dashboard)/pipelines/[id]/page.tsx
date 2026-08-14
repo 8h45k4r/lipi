@@ -131,19 +131,19 @@ export default function PipelineDetailPage() {
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6 relative">
-      <div className="flex items-center gap-4 text-muted-foreground text-sm font-medium mb-2">
-        <Link href="/pipelines" className="hover:text-foreground transition-colors flex items-center">
+    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 relative">
+      <div className="flex items-center gap-4 text-muted-foreground text-sm font-medium mb-2 min-w-0">
+        <Link href="/pipelines" className="hover:text-foreground transition-colors flex items-center shrink-0">
           <ChevronLeft className="w-4 h-4 mr-1" /> Pipelines
         </Link>
         <span>/</span>
-        <span className="text-foreground">{pipeline.name}</span>
+        <span className="text-foreground truncate">{pipeline.name}</span>
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">{pipeline.name}</h1>
-          <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
+          <h1 className="text-2xl md:text-3xl font-bold text-foreground break-words">{pipeline.name}</h1>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-sm text-muted-foreground">
             <span className={`inline-flex items-center gap-1 ${pipeline.status === 'Active' ? 'text-success' : 'text-warning'}`}>
               <span className={`w-2 h-2 rounded-none ${pipeline.status === 'Active' ? 'bg-success' : 'bg-warning'}`}></span>
               {pipeline.status}
@@ -154,7 +154,7 @@ export default function PipelineDetailPage() {
             <span>{pipeline.successRate} Success Rate</span>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 shrink-0">
           <Button variant="outline" className="rounded-none border-border text-foreground shadow-sm" onClick={togglePipelineStatus}>
             {pipeline.status === "Active" ? <Pause className="w-4 h-4 mr-2" /> : <Play className="w-4 h-4 mr-2" />}
             {pipeline.status === "Active" ? "Pause" : "Run"}
@@ -178,7 +178,7 @@ export default function PipelineDetailPage() {
           </Button>
         </div>
 
-        <div className="flex-1 p-8 bg-[url('/grid.svg')] relative overflow-hidden flex flex-col items-center">
+        <div className="flex-1 p-4 md:p-8 bg-[url('/grid.svg')] relative overflow-hidden flex flex-col items-center">
           <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, #003C8D 1px, transparent 0)', backgroundSize: '24px 24px' }}></div>
           
           <div className="relative z-10 w-full max-w-lg space-y-4">
@@ -229,8 +229,8 @@ export default function PipelineDetailPage() {
 
       {/* Add Step Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-card w-full max-w-2xl p-6 border border-border shadow-lg rounded-none relative flex flex-col max-h-[85vh]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-card w-full max-w-2xl p-4 sm:p-6 border border-border shadow-lg rounded-none relative flex flex-col max-h-[85vh]">
             <Button variant="ghost" size="sm" className="absolute top-4 right-4 h-8 w-8 p-0 rounded-none text-muted-foreground hover:text-foreground transition-colors duration-200" onClick={() => setShowAddModal(false)}>
               <X className="w-4 h-4" />
             </Button>

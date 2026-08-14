@@ -130,3 +130,12 @@
     @apply font-sans;
   }
 }
+/* Poppins for Nepali (Devanagari) text. Scoped: does not change the
+   app-wide default font for English content. */
+.font-nepali {
+  font-family: var(--font-poppins), sans-serif;
+}
+
+:lang(ne) {
+  font-family: var(--font-poppins), sans-serif;
+}

@@ -186,21 +186,21 @@ export default function ProjectDetailPage() {
   }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6 relative">
+    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 relative">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-muted-foreground text-sm font-medium">
-        <Link href="/projects" className="hover:text-foreground transition-colors flex items-center">
+      <div className="flex items-center gap-2 text-muted-foreground text-sm font-medium min-w-0">
+        <Link href="/projects" className="hover:text-foreground transition-colors flex items-center shrink-0">
           <ChevronLeft className="w-4 h-4 mr-1" /> Projects
         </Link>
         <span>/</span>
-        <span className="text-foreground font-semibold">{project.name}</span>
+        <span className="text-foreground font-semibold truncate">{project.name}</span>
       </div>
 
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold text-foreground tracking-tight">{project.name}</h1>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl md:text-3xl font-bold text-foreground tracking-tight break-words">{project.name}</h1>
             <span className="text-xs font-mono bg-muted px-2 py-0.5 border border-border text-muted-foreground rounded-none">{project.id}</span>
           </div>
           <p className="text-muted-foreground text-sm mt-1">{projectDocs.length} Documents • Created {project.date}</p>
@@ -319,7 +319,7 @@ export default function ProjectDetailPage() {
       {/* Upload/Import Modal */}
       {showUploadModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-card w-full max-w-md p-6 border border-border shadow-lg rounded-none relative">
+          <div className="bg-card w-full max-w-md p-4 sm:p-6 border border-border shadow-lg rounded-none relative max-h-[90vh] overflow-y-auto">
             <Button variant="ghost" size="sm" className="absolute top-4 right-4 h-8 w-8 p-0 rounded-none text-muted-foreground hover:text-foreground transition-colors duration-200" onClick={() => setShowUploadModal(false)}>
               <X className="w-4 h-4" />
             </Button>
@@ -382,7 +382,7 @@ export default function ProjectDetailPage() {
                           <FileText className="w-4 h-4 text-muted-foreground" />
                           <div className="flex-1 overflow-hidden">
                             <p className="text-sm font-medium truncate">{doc.name}</p>
-                            <p className="text-xs text-muted-foreground font-mono">{doc.id} • {doc.date}</p>
+                            <p className="text-xs text-muted-foreground font-mono truncate">{doc.id} • {doc.date}</p>
                           </div>
                         </div>
                       )
@@ -408,7 +408,7 @@ export default function ProjectDetailPage() {
       {/* Data Viewer Modal */}
       {viewerDocId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-card w-full max-w-4xl p-6 border border-border shadow-lg rounded-none relative flex flex-col max-h-[85vh]">
+          <div className="bg-card w-full max-w-4xl p-4 sm:p-6 border border-border shadow-lg rounded-none relative flex flex-col max-h-[85vh]">
             <Button variant="ghost" size="sm" className="absolute top-4 right-4 h-8 w-8 p-0 rounded-none text-muted-foreground hover:text-foreground transition-colors duration-200" onClick={() => setViewerDocId(null)}>
               <X className="w-4 h-4" />
             </Button>
@@ -442,8 +442,8 @@ export default function ProjectDetailPage() {
                   {JSON.stringify(viewerData, null, 2)}
                 </pre>
               ) : (
-                <div className="border border-border rounded-none overflow-hidden">
-                  <table className="w-full text-sm text-left">
+                <div className="border border-border rounded-none overflow-hidden overflow-x-auto">
+                  <table className="w-full min-w-[480px] text-sm text-left">
                     <thead className="bg-muted/50 border-b border-border text-xs uppercase font-semibold">
                       <tr>
                         <th className="px-4 py-2 font-medium">Field</th>
@@ -454,7 +454,7 @@ export default function ProjectDetailPage() {
                       {Object.keys(viewerData || {}).map((key) => (
                         <tr key={key} className="border-b border-border last:border-0">
                           <td className="px-4 py-2 font-medium bg-muted/10 font-mono text-xs">{key}</td>
-                          <td className="px-4 py-2">
+                          <td className="px-4 py-2 break-words">
                             {typeof viewerData[key] === 'object' ? JSON.stringify(viewerData[key]) : String(viewerData[key])}
                           </td>
                         </tr>

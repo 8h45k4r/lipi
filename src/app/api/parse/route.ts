@@ -1,11 +1,19 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { ParseConfig } from '@/types/parse';
-import { requireUser, UnauthorizedError, unauthorizedResponse } from '@/lib/auth';
+import {
+  ForbiddenError,
+  forbiddenResponse,
+  getWorkspaceContext,
+  requirePermission,
+  UnauthorizedError,
+  unauthorizedResponse,
+} from '@/lib/auth';
 
 export async function POST(req: Request) {
   try {
-    const user = await requireUser();
+    const ctx = await getWorkspaceContext();
+    requirePermission(ctx, 'run_tools');
     const body = await req.json().catch(() => ({}));
     const { docId, parseConfig } = body as { docId?: string; parseConfig?: ParseConfig };
 
@@ -20,7 +28,7 @@ export async function POST(req: Request) {
     // never selected, so parse always returned empty text).
     const [docs] = await db.query(
       'SELECT id, mime_type, file_name, ocr_text, page_count FROM documents WHERE doc_uid = ? AND owner_id = ?',
-      [docId, user.userId],
+      [docId, ctx.dataOwnerId],
     );
     if ((docs as any[]).length === 0) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
@@ -33,8 +41,13 @@ export async function POST(req: Request) {
     const pageCount = doc.page_count || 1;
 
     await db.execute(
-      'INSERT INTO activity (type, doc_uid, details) VALUES (?, ?, ?)',
-      ['parse', docId, `Document parsed with ${config.extractionMode || 'default'} settings (${pageCount} pages)`],
+      'INSERT INTO tool_runs (doc_uid, owner_id, tool, request_json, result_json) VALUES (?, ?, ?, ?, ?)',
+      [docId, ctx.dataOwnerId, 'parse', JSON.stringify(config), JSON.stringify({ pageCount, chars: dbOcrText.length })],
+    );
+
+    await db.execute(
+      'INSERT INTO activity (type, doc_uid, owner_id, details) VALUES (?, ?, ?, ?)',
+      ['parse', docId, ctx.dataOwnerId, `Document parsed with ${config.extractionMode || 'default'} settings (${pageCount} pages)`],
     );
 
     return NextResponse.json({
@@ -44,6 +57,7 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     if (error instanceof UnauthorizedError) return unauthorizedResponse();
+    if (error instanceof ForbiddenError) return forbiddenResponse();
     console.error('Parse API error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }

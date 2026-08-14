@@ -116,7 +116,7 @@ export default function DocumentsPage() {
   }, [documents, searchTerm]);
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
+    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -229,7 +229,7 @@ export default function DocumentsPage() {
       {/* Upload Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-card w-full max-w-md p-6 border border-border shadow-lg rounded-none relative">
+          <div className="bg-card w-full max-w-md p-4 sm:p-6 border border-border shadow-lg rounded-none relative max-h-[90vh] overflow-y-auto">
             <Button variant="ghost" size="sm" className="absolute top-4 right-4 h-8 w-8 p-0 rounded-none text-muted-foreground hover:text-foreground" onClick={() => setShowModal(false)}>
               <X className="w-4 h-4" />
             </Button>

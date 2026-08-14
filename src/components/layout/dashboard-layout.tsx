@@ -21,11 +21,13 @@ import {
   Menu,
   X,
   PanelLeft,
-  ChevronRight
+  ChevronRight,
+  ShieldCheck
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/auth-context";
+import type { Permission } from "@/lib/rbac";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -35,18 +37,13 @@ const navItems = [
   { href: "/ai-assistant", label: "AI Assistant", icon: Bot },
 ];
 
-const settingItems = [
-  { href: "/api-keys", label: "API Keys", icon: KeySquare },
-  { href: "/billing", label: "Billing", icon: CreditCard },
-  { href: "/team", label: "Team", icon: Users },
-  { href: "/settings", label: "Settings", icon: Settings },
+const settingItems: { href: string; label: string; icon: typeof Settings; permission?: Permission }[] = [
+  { href: "/api-keys", label: "API Keys", icon: KeySquare, permission: "manage_keys" },
+  { href: "/billing", label: "Billing", icon: CreditCard, permission: "manage_billing" },
+  { href: "/team", label: "Team", icon: Users, permission: "manage_team" },
+  { href: "/roles-permissions", label: "Roles & Permissions", icon: ShieldCheck, permission: "manage_team" },
+  { href: "/settings", label: "Settings", icon: Settings, permission: "manage_settings" },
   { href: "/help", label: "Help", icon: LifeBuoy },
-];
-
-const recentNotifications = [
-  { id: 1, message: "Document Nepal_Gazette_Vol_37.pdf processed successfully", time: "2 min ago" },
-  { id: 2, message: "Pipeline Gazette Extraction completed run #1247", time: "15 min ago" },
-  { id: 3, message: "Team member sita@lipi.ai accepted invitation", time: "1 hour ago" },
 ];
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -54,7 +51,57 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [isMobileOpen, setIsMobileOpen] = React.useState(false);
   const [isNotificationsOpen, setNotificationsOpen] = React.useState(false);
   const [isProfileOpen, setProfileOpen] = React.useState(false);
-  const { user, logout } = useAuth();
+  const { user, logout, role, permissions } = useAuth();
+
+  // Hide management items the caller's role cannot use.
+  const visibleSettingItems = settingItems.filter(
+    (item) => !item.permission || permissions.includes(item.permission),
+  );
+  const roleLabel = role ? role.charAt(0).toUpperCase() + role.slice(1) : null;
+  const roleBadge = roleLabel ? (
+    <span className="shrink-0 border border-primary/30 bg-primary/10 px-1 py-px text-[9px] font-bold uppercase tracking-wider text-primary rounded-none">
+      {roleLabel}
+    </span>
+  ) : null;
+
+  // Real activity feed drives the notifications dropdown.
+  const NOTIFICATIONS_READ_KEY = "lipi.notifications.lastReadId";
+  const [notifications, setNotifications] = React.useState<{ id: number; message: string; time: string }[]>([]);
+  const [lastReadId, setLastReadId] = React.useState(0);
+
+  const fetchNotifications = React.useCallback(() => {
+    fetch("/api/activity")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data?.activities) return;
+        const latest = (data.activities as any[]).slice(0, 5).map((a) => ({
+          id: a.id,
+          message: a.description || a.title,
+          time: a.time,
+        }));
+        setNotifications(latest);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Fetch once on mount; the bell refetches on open. Read-state survives navigation via localStorage.
+  React.useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(NOTIFICATIONS_READ_KEY);
+      if (stored) setLastReadId(Number(stored) || 0);
+    } catch {}
+    fetchNotifications();
+  }, [fetchNotifications]);
+
+  const unreadCount = notifications.filter((n) => Number(n.id) > lastReadId).length;
+
+  const markAllRead = () => {
+    const maxId = notifications.reduce((max, n) => Math.max(max, Number(n.id) || 0), lastReadId);
+    setLastReadId(maxId);
+    try {
+      window.localStorage.setItem(NOTIFICATIONS_READ_KEY, String(maxId));
+    } catch {}
+  };
 
   const [isDesktopMinimized, setIsDesktopMinimized] = React.useState(false);
 
@@ -127,7 +174,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               Management
             </div>
             <nav className="px-3 space-y-1">
-              {settingItems.map((item) => {
+              {visibleSettingItems.map((item) => {
                 const isActive = pathname === item.href;
                 return (
                   <Link
@@ -157,7 +204,10 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 {user ? user.name.charAt(0).toUpperCase() : "U"}
               </div>
               <div className="truncate">
-                <p className="text-xs font-semibold text-foreground truncate">{user?.name || "Demo User"}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-xs font-semibold text-foreground truncate">{user?.name || "Demo User"}</p>
+                  {roleBadge}
+                </div>
                 <p className="text-[10px] text-muted-foreground truncate">{user?.email || "user@lipi.ai"}</p>
               </div>
             </div>
@@ -234,7 +284,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               </div>
             )}
             <nav className="px-3 space-y-1">
-              {settingItems.map((item) => {
+              {visibleSettingItems.map((item) => {
                 const isActive = pathname === item.href;
                 return (
                   <Link
@@ -265,7 +315,10 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               </div>
               {!isDesktopMinimized && (
                 <div className="truncate">
-                  <p className="text-xs font-semibold text-foreground truncate">{user?.name || "Demo User"}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-semibold text-foreground truncate">{user?.name || "Demo User"}</p>
+                    {roleBadge}
+                  </div>
                   <p className="text-[10px] text-muted-foreground truncate">{user?.email || "user@lipi.ai"}</p>
                 </div>
               )}
@@ -322,14 +375,18 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 aria-label="Notifications"
                 className="relative rounded-none text-foreground hover:bg-muted"
                 onClick={() => {
-                  setNotificationsOpen(!isNotificationsOpen);
+                  const opening = !isNotificationsOpen;
+                  setNotificationsOpen(opening);
                   setProfileOpen(false);
+                  if (opening) fetchNotifications();
                 }}
               >
                 <Bell className="h-5 w-5" />
-                <span className="absolute top-1.5 right-1.5 h-4 w-4 bg-primary text-[10px] font-bold text-primary-foreground flex items-center justify-center rounded-none shadow-xs">
-                  3
-                </span>
+                {unreadCount > 0 && (
+                  <span className="absolute top-1.5 right-1.5 h-4 w-4 bg-primary text-[10px] font-bold text-primary-foreground flex items-center justify-center rounded-none shadow-xs">
+                    {unreadCount}
+                  </span>
+                )}
               </Button>
 
               {isNotificationsOpen && (
@@ -338,18 +395,25 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                     <span className="font-semibold text-xs uppercase tracking-wider text-foreground">Notifications</span>
                     <button
                       className="text-[11px] text-primary hover:underline font-medium"
-                      onClick={() => setNotificationsOpen(false)}
+                      onClick={() => {
+                        markAllRead();
+                        setNotificationsOpen(false);
+                      }}
                     >
                       Mark all read
                     </button>
                   </div>
                   <div className="max-h-80 overflow-y-auto divide-y divide-border">
-                    {recentNotifications.map((notification) => (
-                      <div key={notification.id} className="p-3 hover:bg-muted/40 transition-colors duration-200">
-                        <p className="text-xs text-foreground leading-relaxed">{notification.message}</p>
-                        <p className="text-[10px] text-muted-foreground mt-1 font-mono">{notification.time}</p>
-                      </div>
-                    ))}
+                    {notifications.length === 0 ? (
+                      <div className="p-6 text-center text-xs text-muted-foreground">No recent activity.</div>
+                    ) : (
+                      notifications.map((notification) => (
+                        <div key={notification.id} className="p-3 hover:bg-muted/40 transition-colors duration-200">
+                          <p className="text-xs text-foreground leading-relaxed">{notification.message}</p>
+                          <p className="text-[10px] text-muted-foreground mt-1 font-mono">{notification.time}</p>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               )}

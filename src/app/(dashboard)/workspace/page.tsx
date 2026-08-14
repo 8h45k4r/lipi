@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, useMemo, Suspense } from "react";
 import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,11 +27,14 @@ import {
   Eye,
   CheckCircle2,
   RotateCcw,
-  CheckSquare
+  CheckSquare,
+  Scissors,
+  Tags
 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useApp } from "@/contexts/app-context";
+import { useAuth } from "@/contexts/auth-context";
 import { toast } from "sonner";
 
 const PdfDocument = dynamic(
@@ -98,6 +101,24 @@ function OcrWorkspaceContent() {
   ]);
   const [newFieldName, setNewFieldName] = useState("");
   const [isAddingField, setIsAddingField] = useState(false);
+
+  // Split mode: natural-language section descriptions -> page ranges
+  const [splitSections, setSplitSections] = useState([
+    { id: 1, name: "cover", description: "Cover page, letterhead, or title section." },
+    { id: 2, name: "notices", description: "The main body of notices, announcements, or operative clauses." },
+    { id: 3, name: "annexes", description: "Schedules, annexes, tables, or supporting attachments." },
+  ]);
+  const [partitionKey, setPartitionKey] = useState("");
+  const [splitResult, setSplitResult] = useState<any>(null);
+
+  // Classify mode: route the document to a category
+  const [classifyCategories, setClassifyCategories] = useState([
+    { id: 1, name: "gazette", description: "Nepal Gazette (राजपत्र) notice or publication." },
+    { id: 2, name: "citizenship", description: "Citizenship certificate (नागरिकता प्रमाणपत्र)." },
+    { id: 3, name: "land_record", description: "Land or parcel record (जग्गा धनी प्रमाण पुर्जा, लालपुर्जा)." },
+    { id: 4, name: "other", description: "Any other document type." },
+  ]);
+  const [classifyResult, setClassifyResult] = useState<any>(null);
   const [resultsView, setResultsView] = useState("formatted"); // 'formatted' or 'json'
   const [isReviewMode, setIsReviewMode] = useState(false);
   const [acceptedFields, setAcceptedFields] = useState<Record<string, boolean>>({});
@@ -130,7 +151,6 @@ function OcrWorkspaceContent() {
     };
     
     setExtractionData(updatedData);
-    setAnimatedText(JSON.stringify(updatedData, null, 2));
     setAcceptedFields(prev => ({ ...prev, [fieldName]: true }));
     setEditingField(null);
     toast.success(`Updated ${fieldName}`);
@@ -200,6 +220,9 @@ function OcrWorkspaceContent() {
   const [parsePageRangeStart, setParsePageRangeStart] = useState("");
   const [parsePageRangeEnd, setParsePageRangeEnd] = useState("");
 
+  const { permissions } = useAuth();
+  const canRunTools = permissions.includes("run_tools");
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [hasRun, setHasRun] = useState(false);
   const [animatedText, setAnimatedText] = useState("");
@@ -209,7 +232,13 @@ function OcrWorkspaceContent() {
   const [extractionReasoning, setExtractionReasoning] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showReasoning, setShowReasoning] = useState(false);
-  const [stats, setStats] = useState<{ duration: number; tokens: number } | null>(null);
+  // Stats are stored per mode so switching tools never shows another run's numbers.
+  const [statsByMode, setStatsByMode] = useState<Record<string, { duration: number; tokens: number } | null>>({});
+  const stats = statsByMode[mode] ?? null;
+  const toStats = (m: any) => ({
+    duration: m?.totalDurationSeconds || 0,
+    tokens: (m?.promptTokens || 0) + (m?.completionTokens || 0)
+  });
 
   const [fetchedDoc, setFetchedDoc] = useState<any>(null);
   const [isDocLoading, setIsDocLoading] = useState(true);
@@ -244,14 +273,26 @@ function OcrWorkspaceContent() {
         setFetchedDoc(data.document || data);
         setIsDocLoading(false);
         
-        // Populate latest extraction if exists
+        // Populate latest persisted runs if they exist
         const latest = data.document?.latestExtraction;
         if (latest) {
           setHasRun(true);
           setActiveTab("results");
           setExtractionData(latest.data);
-          setAnimatedText(JSON.stringify(latest.data, null, 2));
-          setStats(latest.metrics);
+          setStatsByMode(prev => ({ ...prev, extract: toStats(latest.metrics) }));
+        }
+        const latestSplit = data.document?.latestSplit;
+        if (latestSplit?.data) {
+          setSplitResult({ splits: latestSplit.data.splits ?? [], partitions: latestSplit.data.partitions ?? [], metrics: latestSplit.metrics });
+          setStatsByMode(prev => ({ ...prev, split: toStats(latestSplit.metrics) }));
+        }
+        const latestClassify = data.document?.latestClassify;
+        if (latestClassify?.data) {
+          setClassifyResult({ ...latestClassify.data, metrics: latestClassify.metrics });
+          setStatsByMode(prev => ({ ...prev, classify: toStats(latestClassify.metrics) }));
+        }
+        if (latestSplit?.data || latestClassify?.data) {
+          setHasRun(true);
         }
       })
       .catch((err: any) => {
@@ -301,8 +342,10 @@ function OcrWorkspaceContent() {
     setErrorMessage(null);
     setExtractionData(null);
     setExtractionReasoning(null);
-    setStats(null);
-    
+    setSplitResult(null);
+    setClassifyResult(null);
+    setStatsByMode({});
+
     const parseConfigPayload = {
       agentic: parseAgentic,
       table: parseTable,
@@ -350,14 +393,65 @@ function OcrWorkspaceContent() {
         }
 
         setAnimatedText(JSON.stringify(result, null, 2));
-        setStats({
-          duration: result.totalDurationSeconds || 0,
-          tokens: (result.promptTokens || 0) + (result.completionTokens || 0)
-        });
+        setStatsByMode(prev => ({ ...prev, parse: toStats(result) }));
         toast.success("Document parsed successfully!");
       } catch (error: any) {
         setErrorMessage(error.message || "An unexpected error occurred during parsing.");
         toast.error(error.message || "Parsing failed");
+      } finally {
+        setIsProcessing(false);
+      }
+    } else if (mode === "split") {
+      try {
+        const sections = splitSections
+          .filter(s => s.name.trim())
+          .map(({ name, description }) => ({ name: name.trim(), description }));
+        if (sections.length === 0) throw new Error("Add at least one section description.");
+
+        const response = await fetch("/api/split", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            docId,
+            sections,
+            partitionKey: partitionKey.trim() || undefined,
+          })
+        });
+
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Failed to split document");
+
+        setSplitResult(result);
+        setStatsByMode(prev => ({ ...prev, split: toStats(result.metrics) }));
+        toast.success("Document split successfully!");
+      } catch (error: any) {
+        setErrorMessage(error.message || "An unexpected error occurred during splitting.");
+        toast.error(error.message || "Split failed");
+      } finally {
+        setIsProcessing(false);
+      }
+    } else if (mode === "classify") {
+      try {
+        const categories = classifyCategories
+          .filter(c => c.name.trim())
+          .map(({ name, description }) => ({ name: name.trim(), description }));
+        if (categories.length < 2) throw new Error("Add at least two categories to classify against.");
+
+        const response = await fetch("/api/classify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ docId, categories })
+        });
+
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Failed to classify document");
+
+        setClassifyResult(result);
+        setStatsByMode(prev => ({ ...prev, classify: toStats(result.metrics) }));
+        toast.success("Document classified successfully!");
+      } catch (error: any) {
+        setErrorMessage(error.message || "An unexpected error occurred during classification.");
+        toast.error(error.message || "Classification failed");
       } finally {
         setIsProcessing(false);
       }
@@ -387,11 +481,7 @@ function OcrWorkspaceContent() {
 
         setExtractionData(result.data);
         setExtractionReasoning(result.raw || result.reasoning || null);
-        setAnimatedText(JSON.stringify(result, null, 2));
-        setStats({
-          duration: result.metrics?.totalDurationSeconds || 0,
-          tokens: (result.metrics?.promptTokens || 0) + (result.metrics?.completionTokens || 0)
-        });
+        setStatsByMode(prev => ({ ...prev, extract: toStats(result.metrics) }));
         toast.success("Data extracted successfully!");
       } catch (error: any) {
         setErrorMessage(error.message || "An unexpected error occurred during extraction.");
@@ -420,9 +510,18 @@ function OcrWorkspaceContent() {
     }
   };
 
+  // The JSON view, Copy, and Download always reflect the currently selected mode's result.
+  const currentResultJson = useMemo(() => {
+    if (mode === "parse") return animatedText;
+    if (mode === "extract") return extractionData ? JSON.stringify(extractionData, null, 2) : "";
+    if (mode === "split") return splitResult ? JSON.stringify(splitResult, null, 2) : "";
+    if (mode === "classify") return classifyResult ? JSON.stringify(classifyResult, null, 2) : "";
+    return "";
+  }, [mode, animatedText, extractionData, splitResult, classifyResult]);
+
   const handleCopyResult = () => {
-    if (!animatedText) return;
-    navigator.clipboard.writeText(animatedText).then(() => {
+    if (!currentResultJson) return;
+    navigator.clipboard.writeText(currentResultJson).then(() => {
       toast.success("Copied to clipboard!");
     }).catch(() => {
       toast.error("Failed to copy");
@@ -430,12 +529,12 @@ function OcrWorkspaceContent() {
   };
 
   const handleDownloadResult = () => {
-    if (!animatedText) return;
-    const blob = new Blob([animatedText], { type: 'application/json' });
+    if (!currentResultJson) return;
+    const blob = new Blob([currentResultJson], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `extraction_${docId || 'result'}.json`;
+    a.download = `${mode}_${docId || 'result'}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -647,10 +746,102 @@ function OcrWorkspaceContent() {
       );
     }
 
-    if (mode === "parse" || resultsView === 'json') {
+    if (mode === "split" && resultsView === "formatted" && splitResult) {
+      const splits: any[] = Array.isArray(splitResult.splits) ? splitResult.splits : [];
+      const partitions: any[] = Array.isArray(splitResult.partitions) ? splitResult.partitions : [];
+      return (
+        <div className="flex-1 space-y-4 overflow-auto p-4">
+          <div className="bg-muted/40 border border-border p-3 flex items-center gap-2 rounded-none shadow-sm">
+            <Scissors className="w-4 h-4 text-primary shrink-0" />
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-foreground">Section Map</h4>
+              <p className="text-[11px] text-muted-foreground">{splits.length} section{splits.length === 1 ? '' : 's'} located. Feed page ranges into Parse or Extract.</p>
+            </div>
+          </div>
+          {splits.map((s, i) => (
+            <div key={i} className={`border p-3.5 shadow-sm rounded-none ${s.confidence === 'high' ? 'bg-emerald-500/5 border-emerald-500/30 border-l-4 border-l-emerald-600' : 'bg-amber-500/5 border-amber-500/30 border-l-4 border-l-amber-500'}`}>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="font-semibold text-sm font-mono text-foreground">{s.name}</span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="px-2 py-0.5 text-[11px] font-mono border border-border bg-background rounded-none">
+                    {Array.isArray(s.pages) && s.pages.length > 0 ? `p. ${s.pages.join(', ')}` : 'no pages'}
+                  </span>
+                  <span className={`px-2 py-0.5 text-[11px] border rounded-none font-semibold ${s.confidence === 'high' ? 'bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border-emerald-500/40' : 'bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-500/40'}`}>
+                    {s.confidence === 'high' ? 'High' : 'Low'} confidence
+                  </span>
+                </div>
+              </div>
+              {s.evidence && (
+                <p className="mt-2 text-xs text-muted-foreground italic bg-muted/30 p-2 border border-border/40">"{s.evidence}"</p>
+              )}
+            </div>
+          ))}
+          {partitions.length > 0 && (
+            <div className="border border-border bg-card shadow-sm rounded-none">
+              <div className="bg-muted/30 p-2 text-xs font-semibold text-muted-foreground border-b border-border">Partitions ({partitionKey || 'key'})</div>
+              <div className="divide-y divide-border">
+                {partitions.map((p, i) => (
+                  <div key={i} className="p-2.5 flex items-center justify-between gap-2 text-xs flex-wrap">
+                    <span className="font-mono font-medium text-foreground break-all">{p.key}{p.name ? ` · ${p.name}` : ''}</span>
+                    <span className="px-2 py-0.5 font-mono border border-border bg-muted/30 rounded-none shrink-0">
+                      {Array.isArray(p.pages) ? `p. ${p.pages.join(', ')}` : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (mode === "classify" && resultsView === "formatted" && classifyResult) {
+      const scores: any[] = Array.isArray(classifyResult.scores) ? classifyResult.scores : [];
+      return (
+        <div className="flex-1 space-y-4 overflow-auto p-4">
+          <div className="border border-primary/40 bg-primary/5 p-4 rounded-none shadow-sm text-center space-y-1">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Best Match</p>
+            <p className="text-xl font-bold font-mono text-primary break-all">{classifyResult.category || 'unknown'}</p>
+            <span className={`inline-block px-2 py-0.5 text-[11px] border rounded-none font-semibold ${classifyResult.confidence === 'high' ? 'bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border-emerald-500/40' : 'bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-500/40'}`}>
+              {classifyResult.confidence === 'high' ? 'High' : 'Low'} confidence
+            </span>
+          </div>
+          {scores.length > 0 && (
+            <div className="border border-border bg-card shadow-sm rounded-none">
+              <div className="bg-muted/30 p-2 text-xs font-semibold text-muted-foreground border-b border-border">Per-Category Scores</div>
+              <div className="p-3 space-y-2.5">
+                {scores.map((s, i) => {
+                  const pct = Math.max(0, Math.min(100, Math.round((typeof s.score === 'number' ? s.score : parseFloat(s.score) || 0) * 100)));
+                  const isWinner = s.category === classifyResult.category;
+                  return (
+                    <div key={i} className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className={`font-mono ${isWinner ? 'font-semibold text-primary' : 'text-foreground'}`}>{s.category}</span>
+                        <span className="font-mono text-muted-foreground">{pct}%</span>
+                      </div>
+                      <div className="h-1.5 bg-muted border border-border/50 rounded-none overflow-hidden">
+                        <div className={`h-full ${isWinner ? 'bg-primary' : 'bg-muted-foreground/40'}`} style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {classifyResult.evidence && (
+            <div className="border border-border bg-card shadow-sm rounded-none">
+              <div className="bg-muted/30 p-2 text-xs font-semibold text-muted-foreground border-b border-border">Evidence</div>
+              <p className="p-3 text-xs text-muted-foreground italic">"{classifyResult.evidence}"</p>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (mode === "parse" || mode === "split" || mode === "classify" || resultsView === 'json') {
       return (
         <div className="flex-1 bg-muted/30 border border-border p-4 font-mono text-xs overflow-auto whitespace-pre shadow-sm">
-          {animatedText || "// No output data yet. Click Run to process."}
+          {currentResultJson || "// No output data yet. Click Run to process."}
         </div>
       );
     }
@@ -698,7 +889,7 @@ function OcrWorkspaceContent() {
   };
 
   return (
-    <div className="flex flex-col md:flex-row h-auto md:h-[calc(100vh-4rem)] bg-muted/30 overflow-y-auto md:overflow-hidden">
+    <div className="flex flex-col lg:flex-row h-auto lg:h-[calc(100vh-4rem)] bg-muted/30 overflow-y-auto lg:overflow-hidden">
       
       {/* LEFT COLUMN: Thumbnails */}
       <div className="w-64 border-r border-border bg-card flex-col hidden xl:flex shrink-0">
@@ -735,7 +926,7 @@ function OcrWorkspaceContent() {
       </div>
 
       {/* MIDDLE COLUMN: Document Viewer */}
-      <div className="flex-1 flex flex-col bg-muted/10 relative min-h-[450px] md:min-h-0">
+      <div className="flex-1 flex flex-col bg-muted/10 relative min-h-[450px] lg:min-h-0 min-w-0">
         <div className="h-14 border-b border-border flex items-center justify-between px-4 bg-card/50 overflow-x-auto gap-4 shrink-0">
           <div className="flex items-center gap-2 shrink-0">
             <Link href={currentDoc?.projectId ? `/projects/${currentDoc.projectId}` : "/dashboard"} className="text-muted-foreground hover:text-primary transition-colors whitespace-nowrap text-sm font-medium flex items-center">
@@ -743,23 +934,23 @@ function OcrWorkspaceContent() {
               <span className="max-w-[200px] truncate">{documentName}</span>
             </Link>
           </div>
-          <div className="flex bg-muted p-1 border border-border shadow-sm shrink-0 mx-auto md:mx-0">
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className={`h-7 text-xs font-medium px-4 rounded-none ${mode === 'parse' ? 'bg-background shadow-sm text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
-              onClick={() => setMode('parse')}
-            >
-              <Maximize className="h-3 w-3 mr-1.5" /> Parse
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className={`h-7 text-xs font-medium px-4 rounded-none ${mode === 'extract' ? 'bg-background shadow-sm text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
-              onClick={() => setMode('extract')}
-            >
-              <FileCode className="h-3 w-3 mr-1.5" /> Extract
-            </Button>
+          <div className="flex bg-muted p-1 border border-border shadow-sm shrink-0 mx-auto md:mx-0 overflow-x-auto max-w-full">
+            {([
+              { key: 'parse', label: 'Parse', icon: Maximize },
+              { key: 'extract', label: 'Extract', icon: FileCode },
+              { key: 'split', label: 'Split', icon: Scissors },
+              { key: 'classify', label: 'Classify', icon: Tags },
+            ] as const).map(({ key, label, icon: Icon }) => (
+              <Button
+                key={key}
+                variant="ghost"
+                size="sm"
+                className={`h-7 text-xs font-medium px-3 md:px-4 rounded-none shrink-0 ${mode === key ? 'bg-background shadow-sm text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setMode(key)}
+              >
+                <Icon className="h-3 w-3 mr-1.5" /> {label}
+              </Button>
+            ))}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <Button variant="ghost" size="icon" className="h-8 w-8 hidden sm:flex hover:text-primary rounded-none"><Upload className="h-4 w-4" /></Button>
@@ -812,23 +1003,35 @@ function OcrWorkspaceContent() {
                 <RotateCcw className="w-3.5 h-3.5 mr-1.5" /> Retry Preview
               </Button>
             </div>
+          ) : fetchedDoc && !fetchedDoc.storagePath ? (
+            <div className="flex flex-col items-center justify-center text-center p-6 space-y-3 max-w-md">
+              <FileCode className="h-10 w-10 text-muted-foreground/40 shrink-0" />
+              <div className="space-y-1">
+                <h4 className="text-sm font-semibold text-foreground">No file preview available</h4>
+                <p className="text-xs text-muted-foreground">The original file for this document is not stored on disk. Its OCR text is available, so Parse, Extract, Split, and Classify all still work.</p>
+              </div>
+            </div>
           ) : fetchedDoc || docId ? (
             <div className="w-full h-full overflow-auto flex items-center justify-center bg-muted/30 p-4">
               {fetchedDoc?.mimeType?.includes('image/') ? (
-                <img 
-                  src={fetchedDoc.storagePath} 
+                <img
+                  src={fetchedDoc.storagePath}
                   alt={documentName}
-                  className="max-w-full h-auto object-contain transition-transform duration-200 shadow-md" 
-                  style={{ transform: `scale(${scale})` }} 
+                  className="max-w-full h-auto object-contain transition-transform duration-200 shadow-md"
+                  style={{ transform: `scale(${scale})` }}
                 />
               ) : (
-                <PdfDocument 
+                <PdfDocument
                   file={fetchedDoc?.storagePath || `/uploads/${docId}.pdf`}
                   pageNumber={currentPage}
                   scale={scale}
                   className="shadow-lg border border-border"
                   onLoadSuccess={({ numPages }) => setNumPages(numPages)}
-                  onLoadError={(err) => setPdfError(err?.message || "Could not render PDF document.")}
+                  onLoadError={(err) => setPdfError(
+                    err?.message?.includes('404')
+                      ? "The original PDF is missing from storage. OCR text is still available, so the processing tools work normally."
+                      : (err?.message || "Could not render PDF document.")
+                  )}
                 />
               )}
             </div>
@@ -902,7 +1105,7 @@ function OcrWorkspaceContent() {
       </div>
 
       {/* RIGHT COLUMN: Configuration / Results */}
-      <div className="w-full md:w-[450px] border-t md:border-l md:border-t-0 border-border bg-card flex flex-col shrink-0 min-h-[500px] md:min-h-0">
+      <div className="w-full lg:w-[420px] xl:w-[450px] border-t lg:border-l lg:border-t-0 border-border bg-card flex flex-col shrink-0 min-h-[500px] lg:min-h-0">
         <div className="min-h-[3.5rem] py-2 border-b border-border flex items-center justify-between px-3 md:px-4 text-sm font-medium bg-card/50 shrink-0 flex-wrap gap-y-2 gap-x-2">
           <div className="flex gap-4 md:gap-6 h-full shrink-0">
             <button 
@@ -1111,6 +1314,104 @@ function OcrWorkspaceContent() {
                   </div>
                 </>
               )}
+
+              {mode === 'split' && (
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="font-semibold text-sm">Section Descriptions</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">Describe each section in plain English. Split returns the page ranges each one occupies, with confidence.</p>
+                  </div>
+                  <div className="space-y-3">
+                    {splitSections.map((section) => (
+                      <div key={section.id} className="border border-border bg-muted/10 p-3 space-y-2 rounded-none">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={section.name}
+                            onChange={(e) => setSplitSections(prev => prev.map(s => s.id === section.id ? { ...s, name: e.target.value } : s))}
+                            placeholder="section_name"
+                            className="flex-1 min-w-0 text-xs font-mono font-medium px-2 py-1.5 border border-input bg-background rounded-none focus:outline-none focus:border-primary"
+                          />
+                          <button
+                            onClick={() => setSplitSections(prev => prev.filter(s => s.id !== section.id))}
+                            className="text-muted-foreground hover:text-destructive p-1.5 shrink-0"
+                            title="Remove section"
+                          >
+                            <Trash className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <textarea
+                          value={section.description}
+                          onChange={(e) => setSplitSections(prev => prev.map(s => s.id === section.id ? { ...s, description: e.target.value } : s))}
+                          placeholder="Describe what this section contains..."
+                          className="w-full h-14 text-xs px-2 py-1.5 border border-input bg-background rounded-none focus:outline-none focus:border-primary resize-none"
+                        />
+                      </div>
+                    ))}
+                    <button
+                      className="w-full p-2.5 text-center text-xs text-primary font-semibold border border-dashed border-border hover:bg-muted/50 cursor-pointer transition-colors rounded-none"
+                      onClick={() => setSplitSections(prev => [...prev, { id: Date.now(), name: "", description: "" }])}
+                    >
+                      + Add section
+                    </button>
+                  </div>
+
+                  <div className="border border-border p-4 bg-muted/10 space-y-2 rounded-none">
+                    <label className="text-sm font-medium text-foreground">Partition Key <span className="text-muted-foreground font-normal">(optional)</span></label>
+                    <p className="text-xs text-muted-foreground">Group repeating sections by an identifier read from the document itself — e.g. <span className="font-mono">account_number</span>, <span className="font-mono">parcel_id</span>, <span className="font-mono">citizenship_no</span>.</p>
+                    <input
+                      type="text"
+                      value={partitionKey}
+                      onChange={(e) => setPartitionKey(e.target.value)}
+                      placeholder="e.g. parcel_id"
+                      className="w-full text-xs font-mono px-2 py-1.5 border border-input bg-background rounded-none focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {mode === 'classify' && (
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="font-semibold text-sm">Categories</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">Classify routes the document to its best-matching category with per-category confidence, so each file reaches the right pipeline.</p>
+                  </div>
+                  <div className="space-y-3">
+                    {classifyCategories.map((category) => (
+                      <div key={category.id} className="border border-border bg-muted/10 p-3 space-y-2 rounded-none">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={category.name}
+                            onChange={(e) => setClassifyCategories(prev => prev.map(c => c.id === category.id ? { ...c, name: e.target.value } : c))}
+                            placeholder="category_name"
+                            className="flex-1 min-w-0 text-xs font-mono font-medium px-2 py-1.5 border border-input bg-background rounded-none focus:outline-none focus:border-primary"
+                          />
+                          <button
+                            onClick={() => setClassifyCategories(prev => prev.filter(c => c.id !== category.id))}
+                            className="text-muted-foreground hover:text-destructive p-1.5 shrink-0"
+                            title="Remove category"
+                          >
+                            <Trash className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <textarea
+                          value={category.description}
+                          onChange={(e) => setClassifyCategories(prev => prev.map(c => c.id === category.id ? { ...c, description: e.target.value } : c))}
+                          placeholder="Describe this document type..."
+                          className="w-full h-14 text-xs px-2 py-1.5 border border-input bg-background rounded-none focus:outline-none focus:border-primary resize-none"
+                        />
+                      </div>
+                    ))}
+                    <button
+                      className="w-full p-2.5 text-center text-xs text-primary font-semibold border border-dashed border-border hover:bg-muted/50 cursor-pointer transition-colors rounded-none"
+                      onClick={() => setClassifyCategories(prev => [...prev, { id: Date.now(), name: "", description: "" }])}
+                    >
+                      + Add category
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="h-full flex flex-col relative bg-muted/10">
@@ -1143,10 +1444,10 @@ function OcrWorkspaceContent() {
                 </div>
 
                 <div className="flex items-center gap-1.5 ml-auto">
-                  <Button variant="outline" size="sm" className="h-8 text-[11px] md:text-xs rounded-none border-border bg-background hover:bg-muted font-medium" onClick={handleDownloadResult} disabled={!hasRun}>
+                  <Button variant="outline" size="sm" className="h-8 text-[11px] md:text-xs rounded-none border-border bg-background hover:bg-muted font-medium" onClick={handleDownloadResult} disabled={!currentResultJson}>
                     <Download className="w-3.5 h-3.5 sm:mr-1.5" /> <span className="hidden sm:inline">Download</span>
                   </Button>
-                  <Button variant="outline" size="sm" className="h-8 text-[11px] md:text-xs rounded-none border-border bg-background hover:bg-muted font-medium" onClick={handleCopyResult} disabled={!hasRun}>
+                  <Button variant="outline" size="sm" className="h-8 text-[11px] md:text-xs rounded-none border-border bg-background hover:bg-muted font-medium" onClick={handleCopyResult} disabled={!currentResultJson}>
                     <Copy className="w-3.5 h-3.5 sm:mr-1.5" /> <span className="hidden sm:inline">Copy</span>
                   </Button>
                 </div>
@@ -1156,7 +1457,7 @@ function OcrWorkspaceContent() {
                 <div className="absolute inset-0 z-10 bg-background/60 backdrop-blur-none flex flex-col items-center justify-center text-muted-foreground space-y-3">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
                   <p className="text-xs font-semibold uppercase tracking-wider text-foreground">
-                    {mode === 'extract' ? `Extracting... (${elapsedSeconds}s)` : `Parsing... (${elapsedSeconds}s)`}
+                    {({ parse: 'Parsing', extract: 'Extracting', split: 'Splitting', classify: 'Classifying' } as Record<string, string>)[mode] || 'Processing'}... ({elapsedSeconds}s)
                   </p>
                 </div>
               )}
@@ -1188,12 +1489,13 @@ function OcrWorkspaceContent() {
           <Button 
             className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm rounded-none font-medium text-xs px-5 h-9"
             onClick={handleRun}
-            disabled={isProcessing}
+            disabled={isProcessing || !canRunTools}
+            title={!canRunTools ? "View-only access" : undefined}
           >
             {isProcessing ? (
               <>
                 <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin text-primary-foreground" />
-                {mode === 'parse' ? 'Parsing...' : 'Extracting...'}
+                {({ parse: 'Parsing...', extract: 'Extracting...', split: 'Splitting...', classify: 'Classifying...' } as Record<string, string>)[mode] || 'Processing...'}
               </>
             ) : (
               <>

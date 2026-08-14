@@ -2,11 +2,18 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
-import { requireUser, UnauthorizedError, unauthorizedResponse } from '@/lib/auth';
+import {
+  ForbiddenError,
+  forbiddenResponse,
+  getWorkspaceContext,
+  requirePermission,
+  UnauthorizedError,
+  unauthorizedResponse,
+} from '@/lib/auth';
 
 export async function GET() {
   try {
-    const user = await requireUser();
+    const ctx = await getWorkspaceContext();
     const db = await getDb();
 
     // Only the signed-in user's projects, with document counts.
@@ -25,7 +32,7 @@ export async function GET() {
       GROUP BY p.id
       ORDER BY p.created_at DESC
     `,
-      [user.userId],
+      [ctx.dataOwnerId],
     );
 
     const formattedProjects = (rows as any[]).map((p) => ({
@@ -41,6 +48,7 @@ export async function GET() {
     return NextResponse.json({ projects: formattedProjects });
   } catch (error) {
     if (error instanceof UnauthorizedError) return unauthorizedResponse();
+    if (error instanceof ForbiddenError) return forbiddenResponse();
     console.error('Projects GET API Error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
@@ -50,7 +58,8 @@ const CreateSchema = z.object({ name: z.string().min(1, 'Name is required').max(
 
 export async function POST(req: Request) {
   try {
-    const user = await requireUser();
+    const ctx = await getWorkspaceContext();
+    requirePermission(ctx, 'manage_projects');
     const parsed = CreateSchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
@@ -61,12 +70,13 @@ export async function POST(req: Request) {
     await db.execute('INSERT INTO projects (project_uid, name, owner_id) VALUES (?, ?, ?)', [
       uid,
       parsed.data.name,
-      user.userId,
+      ctx.dataOwnerId,
     ]);
 
     return NextResponse.json({ id: uid, name: parsed.data.name });
   } catch (error) {
     if (error instanceof UnauthorizedError) return unauthorizedResponse();
+    if (error instanceof ForbiddenError) return forbiddenResponse();
     console.error('Projects POST API Error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }

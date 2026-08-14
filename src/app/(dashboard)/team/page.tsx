@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Plus, Trash, Shield, ShieldAlert, Mail, X, Loader2 } from "lucide-react";
+import { Plus, Trash, ShieldAlert, Mail, X, Loader2, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 
 interface Member {
@@ -11,6 +11,7 @@ interface Member {
   email: string;
   role: string;
   status: string;
+  hasAccount?: boolean;
 }
 
 export default function TeamPage() {
@@ -20,6 +21,10 @@ export default function TeamPage() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("Member");
   const [inviteMessage, setInviteMessage] = useState("");
+  const [createLogin, setCreateLogin] = useState(false);
+  const [inviteName, setInviteName] = useState("");
+  const [invitePassword, setInvitePassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fetchMembers = async () => {
     try {
@@ -39,27 +44,53 @@ export default function TeamPage() {
     fetchMembers();
   }, []);
 
+  const resetInviteForm = () => {
+    setIsInviteModalOpen(false);
+    setInviteEmail("");
+    setInviteRole("Member");
+    setInviteMessage("");
+    setCreateLogin(false);
+    setInviteName("");
+    setInvitePassword("");
+  };
+
   const handleInviteSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (inviteEmail) {
-      try {
-        const res = await fetch('/api/team', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: inviteEmail, role: inviteRole, message: inviteMessage })
-        });
-        if (!res.ok) throw new Error('Failed to invite member');
-        
-        const newMember = await res.json();
-        setMembers([...members, newMember]);
-        toast.success(`Invite sent to ${inviteEmail}`);
-        setIsInviteModalOpen(false);
-        setInviteEmail("");
-        setInviteRole("Member");
-        setInviteMessage("");
-      } catch (error) {
-        toast.error('Failed to send invite');
+    if (!inviteEmail) return;
+    if (createLogin && invitePassword.length < 8) {
+      toast.error("Temporary password must be at least 8 characters");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const payload: Record<string, string> = {
+        email: inviteEmail,
+        role: inviteRole,
+        message: inviteMessage,
+      };
+      if (createLogin) {
+        payload.name = inviteName;
+        payload.password = invitePassword;
       }
+      const res = await fetch('/api/team', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed to invite member');
+
+      setMembers([...members, data]);
+      toast.success(
+        createLogin
+          ? `${inviteEmail} added with an active login`
+          : `Invite sent to ${inviteEmail}`,
+      );
+      resetInviteForm();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to send invite');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -94,20 +125,21 @@ export default function TeamPage() {
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6 relative">
-      <div className="flex items-center justify-between">
+    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 relative">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Team</h1>
           <p className="text-muted-foreground text-sm">Manage who has access to this workspace.</p>
         </div>
-        <Button onClick={() => setIsInviteModalOpen(true)} className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm rounded-none">
+        <Button onClick={() => setIsInviteModalOpen(true)} className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm rounded-none self-start sm:self-auto">
           <Plus className="w-4 h-4 mr-2" />
           Invite Member
         </Button>
       </div>
 
       <div className="bg-card border border-border shadow-sm overflow-hidden rounded-none">
-        <table className="w-full text-sm text-left">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-sm text-left">
           <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-border">
             <tr>
               <th className="px-4 py-3 font-medium">User</th>
@@ -136,10 +168,21 @@ export default function TeamPage() {
                       <div className="h-8 w-8 bg-primary/10 flex items-center justify-center font-medium text-primary border border-primary/20 rounded-none">
                         {member.name.charAt(0)}
                       </div>
-                      <div>
-                        <div className="font-medium text-foreground">{member.name}</div>
+                      <div className="min-w-0">
+                        <div className="font-medium text-foreground truncate flex items-center gap-1.5">
+                          <span className="truncate">{member.name}</span>
+                          {member.hasAccount && (
+                            <span
+                              title="This member has a login and can sign in."
+                              className="inline-flex items-center gap-1 px-1.5 py-px text-[10px] font-medium border bg-success/10 text-success border-success/20 rounded-none shrink-0"
+                            >
+                              <KeyRound className="w-2.5 h-2.5" />
+                              Has login
+                            </span>
+                          )}
+                        </div>
                         <div className="text-xs text-muted-foreground flex items-center gap-1">
-                          <Mail className="w-3 h-3" /> {member.email}
+                          <Mail className="w-3 h-3 shrink-0" /> <span className="truncate">{member.email}</span>
                         </div>
                       </div>
                     </div>
@@ -179,11 +222,12 @@ export default function TeamPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {isInviteModalOpen && (
         <div className="fixed inset-0 bg-background/80 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-          <div className="bg-card border border-border shadow-md w-full max-w-md p-6 rounded-none space-y-4">
+          <div className="bg-card border border-border shadow-md w-full max-w-md p-4 sm:p-6 rounded-none space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold">Invite Team Member</h2>
               <Button variant="ghost" size="icon" onClick={() => setIsInviteModalOpen(false)} className="rounded-none h-8 w-8">
@@ -223,12 +267,60 @@ export default function TeamPage() {
                   placeholder="Join me on Lipi to process documents..."
                 />
               </div>
+              <div className="border border-border bg-muted/10 p-3 space-y-3 rounded-none">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5 pr-4">
+                    <label className="text-sm font-medium text-foreground">Create login now</label>
+                    <p className="text-xs text-muted-foreground">
+                      Set a temporary password so this person can sign in immediately.
+                    </p>
+                  </div>
+                  <div
+                    className={`w-9 h-5 border border-border relative shrink-0 cursor-pointer transition-colors duration-200 rounded-none ${createLogin ? 'bg-primary' : 'bg-muted'}`}
+                    onClick={() => setCreateLogin(!createLogin)}
+                  >
+                    <div className={`w-4 h-4 bg-background border border-border absolute top-[1px] transition-all duration-200 rounded-none ${createLogin ? 'left-[17px]' : 'left-[1px]'}`}></div>
+                  </div>
+                </div>
+                {createLogin && (
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground">Full Name</label>
+                      <input
+                        type="text"
+                        value={inviteName}
+                        onChange={(e) => setInviteName(e.target.value)}
+                        className="w-full border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary rounded-none"
+                        placeholder="Sita Sharma"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground">Temporary Password</label>
+                      <input
+                        type="password"
+                        required={createLogin}
+                        minLength={8}
+                        value={invitePassword}
+                        onChange={(e) => setInvitePassword(e.target.value)}
+                        className="w-full border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary rounded-none"
+                        placeholder="At least 8 characters"
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      They sign in with this email and password, and should change the password after
+                      their first login. If this email already has a Lipi account, that account is
+                      linked instead and its password stays unchanged.
+                    </p>
+                  </div>
+                )}
+              </div>
               <div className="flex justify-end gap-2 pt-2">
-                <Button type="button" variant="outline" onClick={() => setIsInviteModalOpen(false)} className="rounded-none">
+                <Button type="button" variant="outline" onClick={resetInviteForm} className="rounded-none">
                   Cancel
                 </Button>
-                <Button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-none">
-                  Send Invite
+                <Button type="submit" disabled={isSubmitting} className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-none">
+                  {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  {createLogin ? 'Add Member' : 'Send Invite'}
                 </Button>
               </div>
             </form>

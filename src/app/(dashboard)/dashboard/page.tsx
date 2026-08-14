@@ -24,8 +24,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from "recharts";
 import { Button } from "@/components/ui/button";
-import { useApp } from "@/contexts/app-context";
-import { toast } from "sonner";
 
 const mockUsageData = [
   { name: "Mon", credits: 4000, accuracy: 99.1 },
@@ -136,15 +134,14 @@ const defaultPendingReviews: PendingReviewItem[] = [
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { documents, pipelines, addDocument } = useApp();
 
   const [metrics, setMetrics] = useState<Metrics>({
-    totalDocuments: documents.length || 8,
-    activePipelines: pipelines.filter((p) => p.status === "Active").length || 2,
-    successRate: 98.4,
-    credits: { used: 142500, total: 500000 },
-    creditsUsed: 142500,
-    totalCredits: 500000,
+    totalDocuments: 0,
+    activePipelines: 0,
+    successRate: 0,
+    credits: { used: 0, total: 1000000 },
+    creditsUsed: 0,
+    totalCredits: 1000000,
   });
 
   const [recentDocuments, setRecentDocuments] = useState<DocumentItem[]>([]);
@@ -195,23 +192,9 @@ export default function DashboardPage() {
     fetchData();
   }, []);
 
-  // Sync fallback recent documents from AppContext if API empty
-  useEffect(() => {
-    if (recentDocuments.length === 0 && documents.length > 0) {
-      const formatted = documents.slice(0, 5).map((doc) => ({
-        id: doc.id,
-        name: doc.name,
-        status: doc.status,
-        date: doc.date,
-      }));
-      setRecentDocuments(formatted);
-    }
-  }, [documents, recentDocuments.length]);
-
   const handleQuickUpload = () => {
-    const docName = `Quick_Upload_${Math.floor(Math.random() * 1000)}.pdf`;
-    addDocument(docName);
-    toast.success(`Started processing ${docName}`);
+    // The Documents page hosts the real upload modal.
+    router.push("/documents");
   };
 
   const getTimelineMeta = (type: string) => {
@@ -260,7 +243,7 @@ export default function DashboardPage() {
     {
       id: "totalDocs",
       title: "Total Documents",
-      value: (metrics.totalDocuments ?? documents.length ?? 0).toLocaleString(),
+      value: metrics.totalDocuments.toLocaleString(),
       icon: FileText,
       iconColor: "text-primary bg-primary/10 border-primary/20",
       trend: "+14.2% vs last month",
@@ -293,7 +276,7 @@ export default function DashboardPage() {
     {
       id: "pipelines",
       title: "Active Pipelines",
-      value: (metrics.activePipelines ?? pipelines.filter((p) => p.status === "Active").length ?? 0).toString(),
+      value: metrics.activePipelines.toString(),
       icon: Workflow,
       iconColor: "text-indigo-600 bg-indigo-500/10 border-indigo-200 dark:text-indigo-400 dark:border-indigo-800",
       trend: "3 active workflows",
@@ -442,7 +425,7 @@ export default function DashboardPage() {
         <div className="lg:col-span-2 space-y-8">
           {/* Usage Chart */}
           <div className="bg-card border border-border shadow-xs p-6 rounded-none">
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
               <div>
                 <h3 className="text-base font-bold text-foreground uppercase tracking-wider">Processing Usage & Accuracy</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">Daily document credits consumed and mean confidence rate</p>
@@ -483,7 +466,7 @@ export default function DashboardPage() {
 
             <div className="bg-card border border-border shadow-xs overflow-hidden rounded-none">
               <div className="overflow-x-auto max-h-[360px]">
-                <table className="w-full text-left text-xs">
+                <table className="w-full min-w-[600px] text-left text-xs">
                   <thead className="text-[11px] font-bold text-muted-foreground uppercase bg-muted/50 border-b border-border sticky top-0 z-10">
                     <tr>
                       <th className="px-4 py-3 font-semibold">Filename</th>

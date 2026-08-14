@@ -176,7 +176,7 @@ export default function ProjectsPage() {
   }, [projects, searchTerm]);
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
+    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -210,7 +210,7 @@ export default function ProjectsPage() {
           )}
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="border border-border p-0.5 bg-background flex items-center rounded-none">
             <Button
               variant={viewMode === 'table' ? 'default' : 'ghost'}
@@ -348,7 +348,7 @@ export default function ProjectsPage() {
         </div>
       ) : (
         /* Card Grid View */
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredProjects.map(proj => (
             <div 
               key={proj.id} 
@@ -381,8 +381,8 @@ export default function ProjectsPage() {
                 </div>
               </div>
               
-              <h3 className="font-semibold text-lg text-foreground">{proj.name}</h3>
-              <p className="text-xs text-muted-foreground font-mono mt-0.5">{proj.id}</p>
+              <h3 className="font-semibold text-lg text-foreground truncate">{proj.name}</h3>
+              <p className="text-xs text-muted-foreground font-mono mt-0.5 truncate">{proj.id}</p>
               
               <div className="mt-auto">
                 <div className="flex items-center justify-between">
@@ -397,7 +397,7 @@ export default function ProjectsPage() {
             </div>
           ))}
           {filteredProjects.length === 0 && (
-            <div className="col-span-3 text-center py-12 text-muted-foreground border border-dashed border-border bg-card rounded-none">
+            <div className="col-span-full text-center py-12 text-muted-foreground border border-dashed border-border bg-card rounded-none">
               No projects found matching current criteria.
             </div>
           )}
@@ -407,7 +407,7 @@ export default function ProjectsPage() {
       {/* Create Project Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-card w-full max-w-md p-6 border border-border shadow-lg rounded-none relative">
+          <div className="bg-card w-full max-w-md p-4 sm:p-6 border border-border shadow-lg rounded-none relative max-h-[90vh] overflow-y-auto">
             <Button variant="ghost" size="sm" className="absolute top-4 right-4 h-8 w-8 p-0 rounded-none text-muted-foreground hover:text-foreground transition-colors duration-200" onClick={() => setShowCreateModal(false)}>
               <X className="w-4 h-4" />
             </Button>
@@ -466,7 +466,7 @@ export default function ProjectsPage() {
       {/* Upload/Import Modal */}
       {showUploadModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-card w-full max-w-md p-6 border border-border shadow-lg rounded-none relative">
+          <div className="bg-card w-full max-w-md p-4 sm:p-6 border border-border shadow-lg rounded-none relative max-h-[90vh] overflow-y-auto">
             <Button variant="ghost" size="sm" className="absolute top-4 right-4 h-8 w-8 p-0 rounded-none text-muted-foreground hover:text-foreground transition-colors duration-200" onClick={() => setShowUploadModal(false)}>
               <X className="w-4 h-4" />
             </Button>

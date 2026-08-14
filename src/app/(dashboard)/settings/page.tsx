@@ -28,7 +28,7 @@ interface ToggleProps {
 const Toggle = ({ checked, onChange, label, description }: ToggleProps) => {
   return (
     <div className="flex items-center justify-between py-4 border-b border-border last:border-0">
-      <div className="flex flex-col gap-1 pr-4">
+      <div className="flex flex-col gap-1 pr-4 min-w-0">
         <span className="font-medium text-foreground">{label}</span>
         {description && <span className="text-sm text-muted-foreground">{description}</span>}
       </div>
@@ -218,13 +218,13 @@ export default function SettingsPage() {
 
   return (
     <div className="flex flex-col min-h-screen font-['Outfit'] bg-background">
-      <div className="flex-1 p-8 max-w-6xl mx-auto w-full">
+      <div className="flex-1 p-4 md:p-8 max-w-6xl mx-auto w-full">
         <div className="mb-8">
           <h1 className="text-3xl font-semibold text-foreground tracking-tight">Settings</h1>
           <p className="text-muted-foreground mt-2 text-lg">Manage your workspace preferences and account settings.</p>
         </div>
 
-        <div className="flex flex-col md:flex-row gap-10 items-start">
+        <div className="flex flex-col md:flex-row gap-6 md:gap-10 items-start">
           {/* Sidebar Navigation */}
           <nav className="w-full md:w-64 shrink-0 flex flex-col gap-2">
             {tabs.map((tab) => {
@@ -248,7 +248,7 @@ export default function SettingsPage() {
           </nav>
 
           {/* Main Content Area */}
-          <div className="flex-1 w-full bg-card border border-border p-8 rounded-none shadow-sm min-h-[600px]">
+          <div className="flex-1 w-full bg-card border border-border p-4 md:p-8 rounded-none shadow-sm min-h-[600px]">
             {isLoading ? (
               <div className="flex flex-col items-center justify-center h-64 gap-4">
                 <Loader2 className="w-8 h-8 text-primary animate-spin" />

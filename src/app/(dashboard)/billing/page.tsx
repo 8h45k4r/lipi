@@ -5,15 +5,15 @@ import { CreditCard, Download, ExternalLink } from "lucide-react";
 
 export default function BillingPage() {
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8">
+    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Billing & Usage</h1>
         <p className="text-muted-foreground text-sm">Manage your subscription, credits, and invoices.</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="col-span-2 bg-card border border-border p-6 shadow-sm">
-          <div className="flex justify-between items-start mb-6">
+        <div className="lg:col-span-2 bg-card border border-border p-6 shadow-sm">
+          <div className="flex flex-wrap justify-between items-start gap-3 mb-6">
             <div>
               <h2 className="text-lg font-medium text-foreground">Enterprise Plan</h2>
               <p className="text-sm text-muted-foreground mt-1">Billed $499/mo + usage</p>
@@ -57,7 +57,8 @@ export default function BillingPage() {
         <div className="p-6 border-b border-border">
           <h2 className="text-lg font-medium text-foreground">Invoice History</h2>
         </div>
-        <table className="w-full text-sm text-left">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[560px] text-sm text-left">
           <thead className="text-xs text-muted-foreground uppercase bg-muted/50 border-b border-border">
             <tr>
               <th className="px-6 py-4 font-medium">Date</th>
@@ -89,6 +90,7 @@ export default function BillingPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

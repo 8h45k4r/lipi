@@ -1,23 +1,30 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { requireUser, UnauthorizedError, unauthorizedResponse } from '@/lib/auth';
+import {
+  ForbiddenError,
+  forbiddenResponse,
+  getWorkspaceContext,
+  requirePermission,
+  UnauthorizedError,
+  unauthorizedResponse,
+} from '@/lib/auth';
 
 export async function GET() {
   try {
-    const user = await requireUser();
+    const ctx = await getWorkspaceContext();
     const db = await getDb();
 
-    // Only activity tied to the caller's own documents or projects.
+    // Directly owner-scoped (owner_id is written on every insert and
+    // backfilled by scripts/setup.js for legacy rows).
     const [rows] = await db.query(
       `
       SELECT a.id, a.type, a.doc_uid, a.project_uid, a.details, a.created_at
       FROM activity a
-      WHERE a.doc_uid IN (SELECT doc_uid FROM documents WHERE owner_id = ?)
-         OR a.project_uid IN (SELECT project_uid FROM projects WHERE owner_id = ?)
+      WHERE a.owner_id = ?
       ORDER BY a.created_at DESC
       LIMIT 50
     `,
-      [user.userId, user.userId],
+      [ctx.dataOwnerId],
     );
 
     const formattedActivities = (rows as any[]).map(row => {
@@ -33,6 +40,9 @@ export async function GET() {
       } else if (row.type === 'feedback') {
         icon = 'CheckCircle2';
         color = 'text-warning bg-warning/10';
+      } else if (row.type === 'parse' || row.type === 'split' || row.type === 'classify') {
+        icon = 'Play';
+        color = 'text-primary bg-primary/10';
       }
 
       return {
@@ -50,6 +60,7 @@ export async function GET() {
     return NextResponse.json({ activities: formattedActivities });
   } catch (error) {
     if (error instanceof UnauthorizedError) return unauthorizedResponse();
+    if (error instanceof ForbiddenError) return forbiddenResponse();
     console.error('Activity API Error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }

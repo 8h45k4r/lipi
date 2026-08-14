@@ -5,7 +5,7 @@ import { Book, LifeBuoy, MessageSquare, Search } from "lucide-react";
 
 export default function HelpPage() {
   return (
-    <div className="p-8 max-w-4xl mx-auto space-y-8 text-center pt-16">
+    <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-8 text-center pt-10 md:pt-16">
       <h1 className="text-3xl font-bold text-foreground">How can we help?</h1>
       
       <div className="relative max-w-xl mx-auto">
@@ -17,7 +17,7 @@ export default function HelpPage() {
         />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-8 text-left">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pt-8 text-left">
         <div className="bg-card border border-border p-6 shadow-sm hover:border-primary/50 transition-colors cursor-pointer">
           <Book className="w-8 h-8 text-primary mb-4" />
           <h3 className="font-semibold text-lg text-foreground mb-2">Documentation</h3>

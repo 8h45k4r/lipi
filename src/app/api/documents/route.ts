@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { requireUser, UnauthorizedError, unauthorizedResponse } from '@/lib/auth';
+import { getWorkspaceContext, UnauthorizedError, unauthorizedResponse } from '@/lib/auth';
 
 export async function GET() {
   try {
-    const user = await requireUser();
+    const ctx = await getWorkspaceContext();
     const db = await getDb();
 
     const [rows] = await db.query(
@@ -21,7 +21,7 @@ export async function GET() {
       WHERE d.owner_id = ?
       ORDER BY d.created_at DESC
     `,
-      [user.userId],
+      [ctx.dataOwnerId],
     );
 
     const formattedDocs = (rows as any[]).map((doc) => ({

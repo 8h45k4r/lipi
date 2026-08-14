@@ -13,7 +13,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ file
     const safeFilename = path.basename(filename);
     const uploadDir = path.isAbsolute(env.UPLOAD_DIR)
       ? env.UPLOAD_DIR
-      : path.join(process.cwd(), env.UPLOAD_DIR);
+      : path.join(/*turbopackIgnore: true*/ process.cwd(), env.UPLOAD_DIR);
     const filePath = path.join(uploadDir, safeFilename);
 
     try {

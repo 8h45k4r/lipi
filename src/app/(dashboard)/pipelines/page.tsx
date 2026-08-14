@@ -136,7 +136,7 @@ export default function PipelinesPage() {
   }, [pipelines, searchTerm]);
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
+    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -170,7 +170,7 @@ export default function PipelinesPage() {
           )}
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="border border-border p-0.5 bg-background flex items-center rounded-none">
             <Button
               variant={viewMode === 'table' ? 'default' : 'ghost'}
@@ -325,13 +325,13 @@ export default function PipelinesPage() {
               onClick={() => router.push(`/pipelines/${pipeline.id}`)}
               className="bg-card border border-border p-6 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 group cursor-pointer hover:border-primary/50 transition-colors duration-200 rounded-none"
             >
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 bg-primary/10 flex items-center justify-center border border-primary/20 rounded-none">
+              <div className="flex items-center gap-4 min-w-0">
+                <div className="w-10 h-10 bg-primary/10 flex items-center justify-center border border-primary/20 rounded-none shrink-0">
                   <Workflow className="w-5 h-5 text-primary" />
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-lg text-foreground">{pipeline.name}</h3>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-semibold text-lg text-foreground truncate">{pipeline.name}</h3>
                     <span className="text-xs font-mono text-muted-foreground bg-muted px-1.5 py-0.5 border border-border rounded-none">{pipeline.id}</span>
                   </div>
                   <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground flex-wrap">
@@ -370,7 +370,7 @@ export default function PipelinesPage() {
       {/* Create Pipeline Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-card w-full max-w-md p-6 border border-border shadow-lg rounded-none relative">
+          <div className="bg-card w-full max-w-md p-4 sm:p-6 border border-border shadow-lg rounded-none relative max-h-[90vh] overflow-y-auto">
             <Button variant="ghost" size="sm" className="absolute top-4 right-4 h-8 w-8 p-0 rounded-none text-muted-foreground hover:text-foreground transition-colors duration-200" onClick={() => setShowModal(false)}>
               <X className="w-4 h-4" />
             </Button>

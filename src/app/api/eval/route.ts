@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
+import { getWorkspaceContext, UnauthorizedError, unauthorizedResponse } from '@/lib/auth';
 
 export async function POST(req: Request) {
   try {
+    const ctx = await getWorkspaceContext();
     const { docId, extractionId } = await req.json();
 
     if (!docId || !extractionId) {
@@ -11,8 +13,20 @@ export async function POST(req: Request) {
 
     const db = await getDb();
 
+    // The document must belong to the caller's workspace.
+    const [owned]: any = await db.query(
+      'SELECT doc_uid FROM documents WHERE doc_uid = ? AND owner_id = ?',
+      [docId, ctx.dataOwnerId],
+    );
+    if (owned.length === 0) {
+      return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+    }
+
     // Fetch the extraction
-    const [extRows]: any = await db.query('SELECT result_json FROM extractions WHERE id = ?', [extractionId]);
+    const [extRows]: any = await db.query(
+      'SELECT result_json FROM extractions WHERE id = ? AND doc_uid = ?',
+      [extractionId, docId],
+    );
     if (extRows.length === 0) {
       return NextResponse.json({ error: 'Extraction not found' }, { status: 404 });
     }
@@ -46,6 +60,7 @@ export async function POST(req: Request) {
     });
 
   } catch (error: any) {
+    if (error instanceof UnauthorizedError) return unauthorizedResponse();
     console.error('Eval API error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

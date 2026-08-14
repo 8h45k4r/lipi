@@ -1,10 +1,16 @@
 import type { Metadata } from "next";
-import { Outfit } from "next/font/google";
+import { Outfit, Poppins } from "next/font/google";
 import "./globals.css";
 
 const outfit = Outfit({
   variable: "--font-outfit",
   subsets: ["latin"],
+});
+
+const poppins = Poppins({
+  variable: "--font-poppins",
+  subsets: ["latin", "devanagari"],
+  weight: ["400", "500", "600", "700"],
 });
 
 import { ThemeProvider } from "@/components/theme-provider";
@@ -20,7 +26,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${outfit.variable} antialiased`}>
+    <html lang="en" suppressHydrationWarning className={`${outfit.variable} ${poppins.variable} antialiased`}>
       <body suppressHydrationWarning className="min-h-screen flex flex-col bg-background font-sans">
         <ThemeProvider
           attribute="class"

@@ -1,17 +1,24 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { requireUser, UnauthorizedError, unauthorizedResponse } from '@/lib/auth';
+import {
+  ForbiddenError,
+  forbiddenResponse,
+  getWorkspaceContext,
+  requirePermission,
+  UnauthorizedError,
+  unauthorizedResponse,
+} from '@/lib/auth';
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await requireUser();
+    const ctx = await getWorkspaceContext();
     const db = await getDb();
     const { id: projectId } = await params;
 
     // Scope to the owner; unauthorized/missing both return 404.
     const [projectRows] = await db.query(
       'SELECT project_uid as id, name, created_at as date FROM projects WHERE project_uid = ? AND owner_id = ?',
-      [projectId, user.userId],
+      [projectId, ctx.dataOwnerId],
     );
 
     if ((projectRows as any[]).length === 0) {
@@ -57,6 +64,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     });
   } catch (error) {
     if (error instanceof UnauthorizedError) return unauthorizedResponse();
+    if (error instanceof ForbiddenError) return forbiddenResponse();
     console.error('Project Detail API Error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
@@ -64,14 +72,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await requireUser();
+    const ctx = await getWorkspaceContext();
+    requirePermission(ctx, 'manage_projects');
     const db = await getDb();
     const { id: projectId } = await params;
 
     // Verify ownership before deleting anything.
     const [owned] = await db.query(
       'SELECT project_uid FROM projects WHERE project_uid = ? AND owner_id = ?',
-      [projectId, user.userId],
+      [projectId, ctx.dataOwnerId],
     );
     if ((owned as any[]).length === 0) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
@@ -83,11 +92,11 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       await conn.execute('DELETE FROM project_documents WHERE project_uid = ?', [projectId]);
       await conn.execute('DELETE FROM projects WHERE project_uid = ? AND owner_id = ?', [
         projectId,
-        user.userId,
+        ctx.dataOwnerId,
       ]);
       await conn.execute(
-        'INSERT INTO activity (type, project_uid, details) VALUES (?, ?, ?)',
-        ['project_delete', projectId, 'Deleted project'],
+        'INSERT INTO activity (type, project_uid, owner_id, details) VALUES (?, ?, ?, ?)',
+        ['project_delete', projectId, ctx.dataOwnerId, 'Deleted project'],
       );
       await conn.commit();
     } catch (txErr) {
@@ -100,6 +109,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     return NextResponse.json({ success: true });
   } catch (error) {
     if (error instanceof UnauthorizedError) return unauthorizedResponse();
+    if (error instanceof ForbiddenError) return forbiddenResponse();
     console.error('Project DELETE API Error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }

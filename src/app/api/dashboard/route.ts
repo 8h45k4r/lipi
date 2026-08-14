@@ -1,12 +1,19 @@
 import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
-import { requireUser, UnauthorizedError, unauthorizedResponse } from '@/lib/auth';
+import {
+  ForbiddenError,
+  forbiddenResponse,
+  getWorkspaceContext,
+  requirePermission,
+  UnauthorizedError,
+  unauthorizedResponse,
+} from '@/lib/auth';
 
 export async function GET() {
   try {
-    const user = await requireUser();
+    const ctx = await getWorkspaceContext();
     const db = await getDb();
-    const owner = user.userId;
+    const owner = ctx.dataOwnerId;
 
     // Total documents (owner-scoped)
     const [docRows] = await db.query('SELECT COUNT(*) as count FROM documents WHERE owner_id = ?', [owner]);
@@ -26,7 +33,22 @@ export async function GET() {
        WHERE d.owner_id = ?`,
       [owner],
     );
-    const creditsUsed = (tokenRows as any[])[0]?.tokens || 0;
+    const extractionTokens = Number((tokenRows as any[])[0]?.tokens || 0);
+
+    // Tokens from parse/split/classify runs count toward usage too. Degrades
+    // gracefully when the tool_runs table doesn't exist yet (deploy without
+    // running `npm run setup`).
+    let runTokens = 0;
+    try {
+      const [runTokenRows] = await db.query(
+        'SELECT SUM(prompt_tokens + completion_tokens) as tokens FROM tool_runs WHERE owner_id = ?',
+        [owner],
+      );
+      runTokens = Number((runTokenRows as any[])[0]?.tokens || 0);
+    } catch (err: any) {
+      if (err?.code !== 'ER_NO_SUCH_TABLE') throw err;
+    }
+    const creditsUsed = extractionTokens + runTokens;
     const totalCredits = 1000000;
 
     // Success rate from the owner's feedback, falling back to completion ratio
@@ -109,6 +131,7 @@ export async function GET() {
     });
   } catch (error) {
     if (error instanceof UnauthorizedError) return unauthorizedResponse();
+    if (error instanceof ForbiddenError) return forbiddenResponse();
     console.error('Dashboard API Error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }

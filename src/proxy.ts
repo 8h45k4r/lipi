@@ -12,7 +12,7 @@ import { SESSION_COOKIE, decryptSession } from '@/lib/session';
  */
 
 // Routes reachable without a session.
-const PUBLIC_PAGES = ['/', '/login', '/signup', '/forgot-password'];
+const PUBLIC_PAGES = ['/', '/login', '/signup', '/forgot-password', '/privacy', '/terms'];
 
 function isPublicPage(pathname: string): boolean {
   return PUBLIC_PAGES.includes(pathname);
