@@ -1,36 +1,80 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Lipi (लिपि) - AI Document & Knowledge Management
 
-## Getting Started
+Lipi is a state-of-the-art, AI-powered document extraction and knowledge management platform designed specifically for the Nepalese financial sector. Built with modern web technologies, Lipi addresses the critical pain points of manual data entry, complex legacy document formats, and regulatory compliance by leveraging localized AI models.
 
-First, run the development server:
+## 🚀 Key Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+### 1. Intelligent Localized Extraction
+- **Bilingual Mastery**: Natively reads and processes both Devanagari and English texts.
+- **Specialized Document Support**: Accurately extracts data from complex local documents including:
+  - Nagarikta (Citizenship Certificates)
+  - Lalpurja (Land Ownership Documents)
+  - KYC and Account Opening Forms
+  - Invoices and Stamped Vendor Bills
+- **BS to AD Conversion**: Built-in support for processing and standardizing Bikram Sambat (BS) dates to Anno Domini (AD).
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Deep Parsing & Content Structuring
+- **Array Extraction**: Capable of deep-diving into long documents (like the Nepal Gazette) to extract repeating blocks of data (e.g., individual notices, laws, or announcements).
+- **Agentic Chunking**: Intelligently handles massive, multi-page PDFs that would normally exceed the context windows of local AI models.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 3. Human-in-the-Loop (HITL) Review Mode
+- An intuitive side-by-side verification interface where operators can see the AI's extracted data alongside the source document.
+- One-click accept, edit, or reject functionality with confidence scores down to the field level.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 4. Centralized Knowledge Base & AI Copilot
+- **Single Source of Truth**: Ingests and indexes internal SOPs, Credit Policies, and Nepal Rastra Bank (NRB) circulars.
+- **Conversational Copilot**: A secure, internal conversational agent that answers compliance and operational questions grounded *strictly* in approved internal data, eliminating hallucinations.
 
-## Learn More
+## 🛠 Tech Stack
 
-To learn more about Next.js, take a look at the following resources:
+- **Frontend**: Next.js 16 (App Router), React, Tailwind CSS, shadcn/ui, Lucide Icons.
+- **Backend**: Next.js API Routes, Node.js (`pdf-parse` for OCR).
+- **Database**: MySQL (via `mysql2`).
+- **AI Engine**: Local LLM integration (Ollama / `gemma4:12b` placeholder).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 🚀 Getting Started
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Prerequisites
+- Node.js (v18+)
+- MySQL Database
+- Ollama (running locally with the `gemma4:12b` model, or configured to your preferred model)
 
-## Deploy on Vercel
+### Installation
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. **Clone the repository**:
+   ```bash
+   git clone <repository-url>
+   cd lipi
+   ```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+2. **Install dependencies**:
+   ```bash
+   npm install
+   ```
+
+3. **Set up the Database**:
+   Update your database credentials in `src/lib/db.ts` or via environment variables. Then run the initialization script:
+   ```bash
+   node init-tables.js
+   ```
+
+4. **Run the Development Server**:
+   ```bash
+   npm run dev
+   ```
+
+5. **Open the Application**:
+   Navigate to [http://localhost:3000](http://localhost:3000) in your browser.
+
+## 📁 Project Structure
+
+- `/src/app` - Next.js App Router pages and API routes.
+- `/src/components` - Reusable UI components (shadcn, modals, layout).
+- `/src/lib` - Core utilities, Database connection, and Ollama integration.
+- `/public/uploads` - Local storage directory for ingested documents.
+
+## ⚠️ Notes on Local AI Models
+If running fully locally with an open-weight model like `gemma4:12b`, please note that the context window is typically limited (e.g., 4096 tokens). For massive documents (like 80-page PDFs), the system utilizes chunking pipelines or requires upgrading to models with larger context windows (like Gemini 1.5 Pro).
+
+---
+*Empowering Nepal's financial institutions with the speed of Artificial Intelligence.*
